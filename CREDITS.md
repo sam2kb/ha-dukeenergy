@@ -30,4 +30,7 @@ The 2.2.0 release line is based on
 
 ## License
 
+The bundled Duke Energy icons and logos come from
+[Home Assistant Brands](https://github.com/home-assistant/brands/tree/master/custom_integrations/duke_energy).
+
 MIT. See [LICENSE](LICENSE); the original copyright notices are preserved.
