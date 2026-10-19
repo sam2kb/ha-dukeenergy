@@ -12,9 +12,9 @@ Home Assistant's Energy dashboard, with optional cost tracking.
 
 This fork continues [hunterjm/ha-dukeenergy](https://github.com/hunterjm/ha-dukeenergy)
 and is based on [crash0verride11's v2.1.4](https://github.com/crash0verride11/ha-dukeenergy).
-It adds the October 2026 login fix (the extension now sends an iPhone User-Agent
-to Duke's login host), config-entry diagnostics, tests in CI and its own release
-pipeline. See [CREDITS.md](CREDITS.md).
+It adds the October 2026 login fixes (an optional Chrome/Edge helper and a
+paste-the-callback flow that works in any browser), config-entry diagnostics,
+tests in CI and its own release pipeline. See [CREDITS.md](CREDITS.md).
 
 > [!WARNING]
 > This integration uses Duke Energy's private mobile API. It is unofficial and
@@ -24,7 +24,8 @@ pipeline. See [CREDITS.md](CREDITS.md).
 ## Requirements
 
 - Home Assistant 2026.2 or later
-- Chrome or Edge on the machine where you sign in
+- Any modern browser. Chrome/Edge can use the helper for a fully automatic
+  handoff; other browsers paste the callback URL (see below)
 - A Duke Energy account with electric and/or gas service
 - HACS (recommended) or manual installation
 
@@ -43,37 +44,68 @@ restart Home Assistant.
 Manual install: copy `custom_components/duke_energy/` into your HA
 `config/custom_components/` directory and restart.
 
-### 2. Install the browser extension
+### 2. Sign-in helper (optional)
 
-The extension is required. Duke's login only accepts its mobile app's redirect
-URI, so the browser cannot hand the authorization code back to Home Assistant on
-its own. Since October 2026 Duke also rejects desktop browsers at the login page,
-so the extension rewrites the User-Agent for `login.duke-energy.com` only.
+Duke's login only accepts its mobile app's redirect URI, so the browser cannot
+hand the authorization code back to Home Assistant by itself. There are two ways
+to bridge that gap:
 
-1. Download `chrome-extension.zip` from the
-   [latest release](https://github.com/sam2kb/ha-dukeenergy/releases/latest).
-2. Extract it to a folder you will keep (Chrome loads an unpacked extension from
-   that path; do not delete it afterwards).
-3. Open `chrome://extensions/` (or `edge://extensions/`).
-4. Enable **Developer mode**.
-5. Click **Load unpacked** and select the extracted folder.
+- **Automatic (Chrome/Edge).** Install the helper from the
+  [latest release](https://github.com/sam2kb/ha-dukeenergy/releases/latest):
+  1. Download `chrome-extension.zip` and extract it to a folder you will keep
+     (Chrome loads an unpacked extension from that path).
+  2. Open `chrome://extensions/` (or `edge://extensions/`).
+  3. Enable **Developer mode**, click **Load unpacked**, and select the folder.
 
-See [chrome-extension/README.md](chrome-extension/README.md) for details.
+  The helper forwards the code and rewrites the User-Agent for
+  `login.duke-energy.com` only. See
+  [chrome-extension/README.md](chrome-extension/README.md).
+
+- **Manual (any browser).** Skip the helper and paste the callback URL into
+  Home Assistant. See
+  [Sign in without the extension](#sign-in-without-the-extension).
 
 ### 3. Add the integration
 
 1. **Settings → Devices & services → Add integration → Duke Energy**.
-2. Follow the login link, sign in, and complete any MFA prompt.
-3. Duke redirects to a **"Not Found"** page. That is expected.
-4. The extension captures the code and forwards it to Home Assistant.
+2. Open the sign-in link. With the helper installed, the flow finishes by itself
+   after you sign in. Otherwise Duke sends you to a **"Not Found"** page: copy
+   the full address from the address bar and paste it into the **Callback URL**
+   field.
+3. Complete any MFA prompt in the same browser tab.
+
+## Sign in without the extension
+
+The config flow accepts the callback URL directly, so any browser works:
+
+1. Make Duke's login see a phone. Duke rejects desktop browsers after the
+   password step:
+   - **Firefox:** `about:config` → add a **String** named
+     `general.useragent.override` with the iPhone value below. Firefox has no
+     per-site override, so reset the pref when you are done.
+   - **Safari:** enable the Develop menu, then
+     **Develop → User Agent → Safari — iOS 18 — iPhone**.
+   - **Chrome/Edge:** DevTools (`F12`) → device toolbar (`Ctrl+Shift+M`) →
+     iPhone.
+2. Start the integration (or reauthentication) and open the sign-in link in that
+   tab. Sign in.
+3. Duke lands on a "Not Found" page whose address ends in `?code=…&state=…`.
+4. Copy the **entire** address and paste it into **Callback URL**.
+5. If the page says `access_denied`, the browser still looked like a desktop;
+   repeat from step 1 with a fresh sign-in link.
+
+```
+Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1
+```
 
 ## If the login fails
 
 | What you see | Cause | What to do |
 | --- | --- | --- |
-| `access_denied` / "An error has occurred" instead of a code | Duke's login rejected the browser or the extension was disabled | Confirm the extension is installed and enabled, then retry. As a fallback, open DevTools (`F12`), toggle device mode (`Ctrl+Shift+M`), pick an iPhone, and sign in again |
-| "Not Found" page and no code | The extension did not capture the redirect | Check the extension popup; reload the extension and retry |
-| "No code was captured" | The login never completed or Duke was down | Retry later; check the extension popup for the captured URL |
+| `access_denied` / "An error has occurred" instead of a code | Duke's login rejected the browser | Use the helper, or switch the browser to a mobile User-Agent and start a fresh flow |
+| "Not Found" page and no code | That page is the expected landing page; the code is in its address bar | Copy the whole address and paste it into **Callback URL** |
+| "That URL belongs to a different sign-in attempt" | The pasted URL came from an older flow | Open the sign-in link from the current form again and paste the new address |
+| Helper popup shows no code | The helper is disabled or lacks site access | Check `chrome://extensions` → Details → site access includes `login.duke-energy.com`; reload the helper |
 | `403 Access Denied` on token exchange | Duke's API edge blocked the request | Update the integration and `aiodukeenergy-co`; if it persists, open an issue with a diagnostics dump |
 | Reauthentication prompt never clears | A transient block was treated as a bad credential | Update to 2.2.0+; if it persists, download diagnostics (**Settings → Devices & services → Duke Energy → ⋮ → Download diagnostics**) and attach it to an issue |
 

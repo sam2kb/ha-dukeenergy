@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -25,7 +26,11 @@ from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
 )
+from yarl import URL
 
 from .const import DOMAIN
 from .coordinator import _SUPPORTED_METER_TYPES, DukeEnergyConfigEntry
@@ -35,6 +40,33 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 _LOGGER = logging.getLogger(__name__)
+
+CONF_CALLBACK_URL = "callback_url"
+
+# Translation keys under `config.error` in strings.json.
+ERROR_AUTHORIZE_REJECTED = "authorize_rejected"
+ERROR_INVALID_CALLBACK_URL = "invalid_callback_url"
+ERROR_STATE_MISMATCH = "state_mismatch"
+
+STEP_AUTH_SCHEMA = vol.Schema(
+    {
+        # Optional + ALLOW_EXTRA so the same step also accepts the callback
+        # view's {"code", "state"} payload, which has no form field.
+        vol.Optional(CONF_CALLBACK_URL): TextSelector(
+            TextSelectorConfig(type=TextSelectorType.URL)
+        )
+    },
+    extra=vol.ALLOW_EXTRA,
+)
+
+
+class InvalidCallbackURLError(Exception):
+    """Raised when the pasted callback URL cannot be used."""
+
+    def __init__(self, error_key: str) -> None:
+        """Initialize with the translation key describing the problem."""
+        super().__init__(error_key)
+        self.error_key = error_key
 
 
 class DukeEnergyOAuth2FlowHandler(
@@ -47,6 +79,13 @@ class DukeEnergyOAuth2FlowHandler(
     MINOR_VERSION = 1
 
     DOMAIN = DOMAIN
+
+    def __init__(self) -> None:
+        """Initialize the Duke Energy config flow."""
+        super().__init__()
+        self._authorize_url: str | None = None
+        self._expected_state: str | None = None
+        self._redirect_uri: str | None = None
 
     @property
     def logger(self) -> logging.Logger:
@@ -65,8 +104,103 @@ class DukeEnergyOAuth2FlowHandler(
         self, _: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Handle picking implementation - directly use our implementation."""
-        self.flow_impl = DukeEnergyOAuth2Implementation(self.hass)
+        implementation = DukeEnergyOAuth2Implementation(self.hass)
+        self.flow_impl = implementation
+        self._redirect_uri = implementation.redirect_uri
         return await self.async_step_auth()
+
+    async def async_step_auth(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """
+        Authorize with Duke Energy and finish from the callback data.
+
+        Two ways in:
+
+        - the OAuth callback view resumes the flow with ``code``/``state`` (or
+          ``error``) when the OAuth helper extension forwards Duke's redirect;
+        - the form below accepts the callback URL pasted by the user, for
+          browsers where the extension is not available.
+        """
+        # Callback view: user_input is the decoded external data (state is a
+        # dict), not our form.
+        if user_input is not None and isinstance(user_input.get("state"), dict):
+            self.external_data = user_input
+            if "error" in user_input:
+                return self.async_abort(
+                    reason="user_rejected_authorize",
+                    description_placeholders={"error": user_input["error"]},
+                )
+            return await self.async_step_creation()
+
+        if self.flow_impl is None:
+            implementation = DukeEnergyOAuth2Implementation(self.hass)
+            self.flow_impl = implementation
+            self._redirect_uri = implementation.redirect_uri
+
+        if self._authorize_url is None:
+            try:
+                async with asyncio.timeout(
+                    config_entry_oauth2_flow.OAUTH_AUTHORIZE_URL_TIMEOUT_SEC
+                ):
+                    self._authorize_url = await self.async_generate_authorize_url()
+            except TimeoutError:
+                _LOGGER.exception("Timeout generating authorize url")
+                return self.async_abort(reason="authorize_url_timeout")
+            self._expected_state = URL(self._authorize_url).query.get("state")
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                self.external_data = self._parse_callback_url(
+                    user_input.get(CONF_CALLBACK_URL) or ""
+                )
+            except InvalidCallbackURLError as err:
+                errors["base"] = err.error_key
+            else:
+                return await self.async_step_creation()
+
+        return self.async_show_form(
+            step_id="auth",
+            data_schema=STEP_AUTH_SCHEMA,
+            description_placeholders={"authorize_url": self._authorize_url},
+            errors=errors,
+        )
+
+    def _parse_callback_url(self, raw_url: str) -> dict[str, Any]:
+        """
+        Turn the pasted callback URL into OAuth2 external data.
+
+        Returns a mapping shaped like the one the OAuth callback view hands the
+        flow: the authorization code plus the decoded state.
+
+        Raises:
+            InvalidCallbackURLError: If the URL is unusable, carries an
+                authorization error, lacks a code, or does not match the state
+                issued for this flow.
+
+        """
+        try:
+            query = URL(raw_url.strip()).query
+        except ValueError as err:
+            raise InvalidCallbackURLError(ERROR_INVALID_CALLBACK_URL) from err
+
+        if "error" in query:
+            raise InvalidCallbackURLError(ERROR_AUTHORIZE_REJECTED)
+
+        if not (code := query.get("code")):
+            raise InvalidCallbackURLError(ERROR_INVALID_CALLBACK_URL)
+
+        if not self._expected_state or query.get("state") != self._expected_state:
+            raise InvalidCallbackURLError(ERROR_STATE_MISMATCH)
+
+        return {
+            "code": code,
+            "state": {
+                "flow_id": self.flow_id,
+                "redirect_uri": self._redirect_uri or self.flow_impl.redirect_uri,
+            },
+        }
 
     async def async_step_reauth(self, _: Mapping[str, Any]) -> ConfigFlowResult:
         """Perform reauth upon an API authentication error."""

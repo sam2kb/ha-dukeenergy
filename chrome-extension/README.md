@@ -2,6 +2,9 @@
 
 A Chrome/Edge extension for the [Duke Energy Home Assistant integration](https://github.com/sam2kb/ha-dukeenergy).
 
+The integration also accepts the callback URL pasted by hand, so this helper is
+a convenience for Chrome and Edge, not a requirement.
+
 Duke Energy's login only accepts its mobile app's OAuth redirect, so the browser
 cannot hand the authorization code back to Home Assistant. This extension
 watches for that redirect, forwards the code to Home Assistant, and — since
