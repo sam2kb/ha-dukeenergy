@@ -48,39 +48,23 @@ Manual install: copy `custom_components/duke_energy/` into your HA
 
 ### 2. Sign in
 
-Duke's login uses its mobile app's redirect URI and checks the browser's
-User-Agent. Sign in with a mobile User-Agent, then paste the resulting callback
-URL into Home Assistant.
+Open **Settings → Devices & services → Add integration → Duke Energy**, then:
 
-**Step 1 - open setup:** go to **Settings → Devices & services → Add
-integration → Duke Energy**. Open the sign-in link and keep the Home Assistant
-setup form open.
+1. Change your browser's User-Agent to the iPhone value below.
+2. Open the sign-in link shown in the integration and log in to Duke Energy.
+3. When Duke redirects or opens a tab, copy the entire address from that tab's
+   address bar, including the `code` and `state` parameters.
+4. Paste the address into **Callback URL** in the integration UI and submit.
 
-**Step 2 - set a mobile User-Agent in the Duke sign-in tab:**
+Keep the setup form open until you submit the URL. Treat that URL as a sign-in
+credential and keep it out of issue reports and screenshots. Restore your usual
+User-Agent when you are done.
 
-- **Firefox:** open `about:config`, add a **String** named
-  `general.useragent.override`, and paste the iPhone value below. Firefox has no
-  per-site override, so reset the pref when you are done.
-- **Safari:** enable the Develop menu, then
-  **Develop → User Agent → Safari — iOS 18 — iPhone**.
-- **Chrome/Edge:** press `F12`, then `Ctrl+Shift+M`, and pick an iPhone.
+Home Assistant then imports up to three years of usage. This can take a minute
+or two; leave the integration in place while it initializes. The account's
+**Status** sensor shows **Fetching**, **Recording**, then **Finished**.
 
-Keep developer tools open in Chrome/Edge while signing in. After changing the
-User-Agent, open the original sign-in link from the setup form in that prepared
-tab. Reloading an error page alone will not restart authorization.
-
-**Step 3 - copy the callback:** after signing in, Duke lands on a "Not Found"
-page whose address ends in `?code=…&state=…`. Copy the **whole** address from the
-address bar and paste it into **Callback URL**.
-
-Treat this URL as a sign-in credential: paste it only into the setup form,
-and keep it out of issue reports and screenshots. Reset any temporary browser
-User-Agent override when you are done.
-
-**Step 4 - wait for the import:** after you submit, setup downloads up to three
-years of usage. This can take a minute or two; don't remove the integration
-while it initializes. The account's `Status` sensor then shows `Fetching`,
-`Recording`, and finally `Finished`.
+iPhone User-Agent:
 
 ```
 Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1

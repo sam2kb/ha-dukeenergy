@@ -27,7 +27,7 @@
         "step": {
             "auth": {
                 "title": "Authorize with Duke Energy",
-                "description": "**Step 1 - make Duke's login see a phone:**\n- **Firefox:** open `about:config`, add a **String** named `general.useragent.override`, and paste the iPhone value below. Reset it afterwards.\n- **Safari:** enable the Develop menu, then **Develop → User Agent → Safari — iOS 18 — iPhone**.\n- **Chrome/Edge:** press `F12`, then `Ctrl+Shift+M`, and pick an iPhone.\n\n**Step 2 - [sign in to Duke Energy]({authorize_url})** in that tab.\n\n**Step 3 - copy the whole address** from the \"Not Found\" page and paste it below.\n\nAfter you submit, Home Assistant downloads up to three years of usage. This can take a minute or two; don't remove the integration while it initializes.\n\niPhone User-Agent:\n`{user_agent}`",
+                "description": "1. Change your browser's User-Agent to the iPhone value below.\n2. [Open Duke Energy sign-in]({authorize_url}) and log in.\n3. When Duke redirects or opens a tab, copy the entire address from that tab's address bar.\n4. Paste the address into **Callback URL** below and submit.\n\nKeep this setup form open until you submit the URL.\n\nHome Assistant then imports up to three years of usage. This can take a minute or two; leave the integration in place while it initializes.\n\niPhone User-Agent:\n`{user_agent}`",
                 "data": {
                     "callback_url": "Callback URL"
                 },
