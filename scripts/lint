@@ -5,4 +5,5 @@ set -e
 cd "$(dirname "$0")/.."
 
 ruff format .
-ruff check . --fix
+ruff check custom_components scripts --fix
+ruff check tests --select F --fix

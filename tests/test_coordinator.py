@@ -3,13 +3,14 @@
 import pytest
 
 from datetime import datetime, timedelta
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 from zoneinfo import ZoneInfo
 
 from freezegun.api import FrozenDateTimeFactory
 
 from aiodukeenergy_co import DukeEnergyAuthError, DukeEnergyBlockedError
 from homeassistant.components.recorder.models import StatisticMeanType
+from homeassistant.components.recorder.statistics import statistics_during_period
 from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntryState
 from homeassistant.const import UnitOfEnergy, UnitOfVolume
 from homeassistant.core import HomeAssistant
@@ -208,6 +209,59 @@ async def test_gas_meter_update(
     assert statistics[0]["start"] == reading_ts + timedelta(hours=12)
     assert statistics[0]["state"] == pytest.approx(2.5)
     assert statistics[0]["sum"] == pytest.approx(2.5)
+
+
+@pytest.mark.freeze_time("2026-07-04T16:00:00Z")
+async def test_gas_incremental_sum_with_real_recorder(
+    recorder_mock: object,
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_api_with_gas_meter: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A second gas import must not count the first stored day twice."""
+    mock_config_entry.add_to_hass(hass)
+    coordinator = DukeEnergyCoordinator(
+        hass, mock_api_with_gas_meter, mock_config_entry
+    )
+    tz = ZoneInfo("America/New_York")
+    # Real statistic IDs allow underscores, not the hyphens in fixture IDs.
+    mock_api_with_gas_meter.get_meters.return_value["456"]["account"]["srcAcctId"] = (
+        "src2"
+    )
+    usage = {
+        datetime(2026, 7, day, tzinfo=tz): {"energy": 2.5, "temperature": None}
+        for day in (1, 2)
+    }
+    with patch.object(
+        coordinator, "_async_get_energy_usage", return_value=(usage, "DAILY")
+    ):
+        await coordinator.async_refresh()
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+        freezer.tick(timedelta(days=1))
+        usage[datetime(2026, 7, 3, tzinfo=tz)] = {
+            "energy": 2.5,
+            "temperature": None,
+        }
+        await coordinator.async_refresh()
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert coordinator.last_update_success is True
+    statistic_id = "duke_energy:gas_456_energy_consumption"
+    result = await recorder_mock.async_add_executor_job(
+        statistics_during_period,
+        hass,
+        datetime(2026, 7, 1, tzinfo=tz),
+        None,
+        {statistic_id},
+        "hour",
+        None,
+        {"sum"},
+    )
+    assert [row["sum"] for row in result[statistic_id]] == pytest.approx(
+        [2.5, 5.0, 7.5]
+    )
 
 
 async def test_cost_incremental_electric(

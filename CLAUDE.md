@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A custom Home Assistant integration for Duke Energy. It uses the `aiodukeenergy-co` library (published to PyPI, import name `aiodukeenergy_co`) for all API communication. It is declared in `manifest.json` `requirements` (so HA installs it) and pinned in `pyproject.toml`'s dev group for tests. The library's dev source lives at `../aiodukeenergy` (sibling of this repo).
 
-The repo follows the standard GitHub/HACS layout: the integration lives under `custom_components/duke_energy/`. Standalone example scripts live in `docs/`. Filenames referenced below (`coordinator.py`, `oauth.py`, `api.py`, etc.) are all relative to `custom_components/duke_energy/`.
+The repo follows the standard GitHub/HACS layout: the integration lives under `custom_components/duke_energy/`. Filenames referenced below (`coordinator.py`, `oauth.py`, `api.py`, etc.) are all relative to `custom_components/duke_energy/`.
 
 ## Architecture
 
@@ -28,14 +28,14 @@ The HA-specific bridge is `api.py:DukeEnergyAuth`, which subclasses `AbstractDuk
 - Writes **external statistics** directly into the HA recorder. The statistics have no backing entities (a carrier-entity redesign was built and abandoned — branch `entities-unknown`, kept for reference only).
 - Statistic IDs follow the pattern `duke_energy:{type}_{serial}_energy_consumption` and `duke_energy:account_{srcAcctId}_temperature`.
 - Separately, `sensor.py` creates one **account device** (Last updated, bill-cycle cost, and billing/payment sensors) and one **meter device** per supported meter via_device (Last changed, bill-cycle usage sensors), fed by `get_monthly_usage()` / `get_billing_payment_info()` — these are ordinary state sensors, unrelated to the statistics.
-- Statistics persist across unload/reload/restart; they are cleared from the recorder only when the config entry is removed (`__init__.py:async_remove_entry`, which clears all `source == DOMAIN` statistics).
+- Statistics persist across unload/reload/restart; they are cleared from the recorder only when the last Duke Energy config entry is removed (`__init__.py:async_remove_entry`). Removing one of several logins preserves the shared statistics because their IDs have no entry ownership marker.
 
 ### aiodukeenergy-co library
 
 External PyPI dependency (import name `aiodukeenergy_co`; dev source at `../aiodukeenergy`). Key modules:
 - `dukeenergy.py` — `DukeEnergy` API client: `get_accounts()`, `get_meters()`, `get_energy_usage()`. Accounts and meters are cached in-memory; pass `fresh=True` to bypass.
 - `duke_auth.py` — Abstract/concrete auth classes. The `AbstractDukeEnergyAuth.request()` method auto-injects the DE bearer token.
-- `auth0.py` — Standalone Auth0 PKCE client (used for non-HA contexts like `docs/electric_example.py`/`docs/gas_example.py`).
+- `auth0.py` — Standalone Auth0 PKCE client (used outside Home Assistant).
 
 ### Statistic details
 
@@ -62,13 +62,14 @@ uvx ruff format custom_components/
 Tests live in `tests/` and use `pytest-homeassistant-custom-component` for HA fixtures (`hass`, `recorder_mock`, `MockConfigEntry`, etc.).
 
 ```bash
-uv run pytest tests/
+uv sync --locked --all-groups
+uv run --frozen pytest tests/
 ```
 
 Or without a project venv (ephemeral):
 
 ```bash
-PYTHONPATH=. uvx --with "pytest-homeassistant-custom-component>=0.13.0" --with "freezegun>=1.5" --with "PyJWT>=2.8" --with "aiodukeenergy-co==1.2.0" pytest tests/
+PYTHONPATH=. uvx --with "pytest-homeassistant-custom-component>=0.13.0" --with "freezegun>=1.5" --with "PyJWT>=2.8" --with "aiodukeenergy-co==1.3.0" pytest tests/
 ```
 
 Key mocking notes:

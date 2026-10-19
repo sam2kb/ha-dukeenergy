@@ -16,8 +16,7 @@ jobs:
       - name: Checkout the repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Check tag matches manifest version
-        if: github.event_name == 'release'
+      - name: Check project, manifest, and release versions
         env:
           TAG: ${{ github.event.release.tag_name }}
         run: |
@@ -26,12 +25,18 @@ jobs:
           import os
           import pathlib
           import sys
+          import tomllib
 
           tag = os.environ["TAG"].removeprefix("v")
           manifest = pathlib.Path(
               "custom_components/duke_energy/manifest.json"
           )
           version = json.loads(manifest.read_text())["version"]
-          print(f"tag={tag} manifest={version}")
-          sys.exit(0 if tag == version else "manifest version does not match tag")
+          project = tomllib.loads(pathlib.Path("pyproject.toml").read_text())
+          project_version = project["project"]["version"]
+          print(f"tag={tag or '(manual check)'} manifest={version} project={project_version}")
+          if project_version != version:
+              sys.exit("project version does not match manifest")
+          if tag and tag != version:
+              sys.exit("manifest version does not match tag")
           PY

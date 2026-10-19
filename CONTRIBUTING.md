@@ -1,61 +1,61 @@
-# Contribution guidelines
+# Contributing
 
-Contributing to this project should be as easy and transparent as possible, whether it's:
+Report bugs and suggest changes through [GitHub issues](https://github.com/sam2kb/ha-dukeenergy/issues).
+For a bug, include the Home Assistant and integration versions, steps to
+reproduce, expected behavior and the actual result. Attach diagnostics when
+available and review logs for personal information, tokens and callback URLs
+before posting. See the [README](README.md#reporting-a-problem).
 
-- Reporting a bug
-- Discussing the current state of the code
-- Submitting a fix
-- Proposing new features
+## Development setup
 
-## Github is used for everything
+Use Python 3.13 and [uv](https://docs.astral.sh/uv/). Home Assistant tests run on
+Linux; on Windows, use WSL or the included VS Code development container.
 
-Github is used to host code, to track issues and feature requests, as well as accept pull requests.
+```bash
+uv sync --locked --all-groups
+uv run --frozen pytest -q
+```
 
-Pull requests are the best way to propose changes to the codebase.
+The lockfile selects the test dependencies used by CI. To run the same lint and
+format checks as CI:
 
-1. Fork the repo and create your branch from `main`.
-2. If you've changed something, update the documentation.
-3. Make sure your code lints (using `scripts/lint`).
-4. Test you contribution.
-5. Issue that pull request!
+```bash
+uvx ruff==0.15.16 check custom_components scripts
+uvx ruff==0.15.16 check tests --select F
+uvx ruff==0.15.16 format . --check
+```
 
-## Any contributions you make will be under the MIT Software License
+With Ruff installed, `scripts/lint` applies formatting and automatic fixes.
 
-In short, when you submit code changes, your submissions are understood to be under the same [MIT License](http://choosealicense.com/licenses/mit/) that covers the project. Feel free to contact the maintainers if that's a concern.
+## Running Home Assistant locally
 
-## Report bugs using Github's [issues](../../issues)
+Open the repository in the included VS Code development container. Its setup
+installs `requirements.txt`; run `scripts/develop` to start Home Assistant using
+the configuration in `config/` on port 8123. Run `uv sync` separately for tests.
 
-GitHub issues are used to track public bugs.
-Report a bug by [opening a new issue](../../issues/new/choose); it's that easy!
+You can also copy or symlink `custom_components/duke_energy/` into a development
+Home Assistant installation's `custom_components/` directory and restart it.
+Use a test installation when working on statistics or removal behavior.
 
-## Write bug reports with detail, background, and sample code
+## Pull requests
 
-**Great Bug Reports** tend to have:
+1. Create a branch from `main` in your fork.
+2. Keep changes focused and update documentation when behavior changes.
+3. Add regression coverage for changes to authentication or statistics.
+4. Run the tests and lint checks above, then open a pull request with the
+   problem, resulting behavior and validation results.
 
-- A quick summary and/or background
-- Steps to reproduce
-  - Be specific!
-  - Give sample code if you can.
-- What you expected would happen
-- What actually happens
-- Notes (possibly including why you think this might be happening, or stuff you tried that didn't work)
+Keep `strings.json` and `translations/en.json` in sync when changing UI text.
+The API dependency in `manifest.json` must match the version tested in
+`pyproject.toml`; update `uv.lock` when changing dependencies. Hassfest and HACS
+validation run in GitHub Actions.
 
-People *love* thorough bug reports. I'm not even kidding.
+For a release, the Git tag (with an optional `v` prefix), manifest version and
+project version must match. Run the Release workflow manually to check project
+and manifest versions before publishing a GitHub release. HACS uses GitHub
+release tags; no ZIP upload is required by this repository's configuration.
 
-## Use a Consistent Coding Style
+## License and credits
 
-Use [black](https://github.com/ambv/black) to make sure the code follows the style.
-
-## Test your code modification
-
-This custom component is based on [integration_blueprint template](https://github.com/ludeeus/integration_blueprint).
-
-It comes with development environment in a container, easy to launch
-if you use Visual Studio Code. With this container you will have a stand alone
-Home Assistant instance running and already configured with the included
-[`configuration.yaml`](./config/configuration.yaml)
-file.
-
-## License
-
-By contributing, you agree that your contributions will be licensed under its MIT License.
+Contributions use the [MIT license](LICENSE). Preserve existing copyright
+notices and credit upstream work; see [CREDITS.md](CREDITS.md).

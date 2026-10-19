@@ -198,3 +198,21 @@ async def test_remove_entry_clears_statistics(
         "duke_energy:electric_123_energy_consumption",
         "duke_energy:electric_123_energy_cost",
     }
+
+
+async def test_remove_entry_keeps_statistics_for_other_login(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Removing a login must not erase another login's shared statistics."""
+    from custom_components.duke_energy import async_remove_entry
+
+    mock_config_entry.add_to_hass(hass)
+    other_entry = MockConfigEntry(domain=DOMAIN, unique_id="another-user", data={})
+    other_entry.add_to_hass(hass)
+
+    # The other entry is not loaded: runtime_data cannot establish ownership.
+    with patch("custom_components.duke_energy.get_instance") as get_recorder:
+        await async_remove_entry(hass, mock_config_entry)
+
+    get_recorder.assert_not_called()

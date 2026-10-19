@@ -89,15 +89,22 @@ async def async_unload_entry(hass: HomeAssistant, entry: DukeEnergyConfigEntry) 
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 
-async def async_remove_entry(
-    hass: HomeAssistant, _entry: DukeEnergyConfigEntry
-) -> None:
+async def async_remove_entry(hass: HomeAssistant, entry: DukeEnergyConfigEntry) -> None:
     """
-    Clear this integration's external statistics when it is removed.
+    Clear external statistics when the final Duke Energy entry is removed.
 
     Statistics persist across reloads and restarts (see the coordinator's
-    _on_unload); they are only removed here, when the user deletes the entry.
+    _on_unload); they are only removed here, after the last login is deleted.
     """
+    # Statistic IDs predate config entries and contain no ownership marker.
+    # Another login may share meters with this one, or may not be loaded yet.
+    # Keep the shared history until the final Duke Energy entry is removed.
+    if any(
+        other.entry_id != entry.entry_id
+        for other in hass.config_entries.async_entries(DOMAIN)
+    ):
+        return
+
     instance = get_instance(hass)
     all_stats = await instance.async_add_executor_job(list_statistic_ids, hass)
     stat_ids = [

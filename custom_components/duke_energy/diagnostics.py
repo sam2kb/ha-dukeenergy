@@ -11,11 +11,13 @@ if TYPE_CHECKING:
     from .coordinator import DukeEnergyConfigEntry
 
 _REDACTED = "**REDACTED**"
-_SECRET_KEYS = frozenset({"token", "access_token", "refresh_token", "id_token"})
+_SECRET_KEYS = frozenset(
+    {"token", "access_token", "refresh_token", "id_token", "entity_id"}
+)
 
 
 def _redact(value: Any) -> Any:
-    """Return a copy of value with token material replaced."""
+    """Return a copy with tokens and user-selected entity names replaced."""
     if isinstance(value, dict):
         return {
             key: _REDACTED if key in _SECRET_KEYS else _redact(item)
@@ -39,6 +41,19 @@ async def async_get_config_entry_diagnostics(
 ) -> dict[str, Any]:
     """Return redacted diagnostics for a Duke Energy config entry."""
     coordinator = getattr(entry, "runtime_data", None)
+    options = dict(entry.options)
+    cost_meters = options.get("cost_meters", {})
+    serials = set(cost_meters)
+    if coordinator is not None:
+        serials.update(coordinator.meter_info)
+    meter_names = {
+        serial: f"meter_{index}"
+        for index, serial in enumerate(sorted(serials), start=1)
+    }
+    if "cost_meters" in options:
+        options["cost_meters"] = {
+            meter_names[serial]: config for serial, config in cost_meters.items()
+        }
 
     diagnostics: dict[str, Any] = {
         "entry": {
@@ -47,7 +62,7 @@ async def async_get_config_entry_diagnostics(
             "version": entry.version,
             "minor_version": entry.minor_version,
             "data": _redact(dict(entry.data)),
-            "options": _redact(dict(entry.options)),
+            "options": _redact(options),
         },
         "coordinator": None,
     }
@@ -61,12 +76,24 @@ async def async_get_config_entry_diagnostics(
         "next_poll": _serialize(coordinator.next_poll_time),
         "accounts": len(coordinator.account_info),
         "meters": {
-            serial: {
+            meter_names[serial]: {
                 "service_type": info.service_type,
                 "last_updated": _serialize(coordinator.meter_last_updated.get(serial)),
             }
             for serial, info in coordinator.meter_info.items()
         },
-        "statistic_ids": sorted(coordinator.statistic_ids),
+        # IDs embed meter serials or internal account IDs. Counts retain the
+        # useful registration information without exporting those identifiers.
+        "statistics": {
+            kind: sum(
+                statistic_id.endswith(suffix)
+                for statistic_id in coordinator.statistic_ids
+            )
+            for kind, suffix in (
+                ("consumption", "_energy_consumption"),
+                ("cost", "_energy_cost"),
+                ("temperature", "_temperature"),
+            )
+        },
     }
     return diagnostics

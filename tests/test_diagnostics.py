@@ -19,6 +19,16 @@ async def test_diagnostics_redacts_token_material(
     mock_config_entry: MockConfigEntry,
 ) -> None:
     """Tokens and account identifiers never reach the diagnostics dump."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        options={
+            "cost_meters": {
+                "serial-1": {"mode": "sensor", "entity_id": "sensor.private_rate"}
+            },
+            "backfill_cost": False,
+        },
+    )
     mock_config_entry.runtime_data = SimpleNamespace(
         status="complete",
         last_poll_time=datetime(2026, 10, 19, 12, 0, tzinfo=UTC),
@@ -26,7 +36,10 @@ async def test_diagnostics_redacts_token_material(
         account_info={"acct-1": "0001"},
         meter_info={"serial-1": SimpleNamespace(service_type="ELECTRIC")},
         meter_last_updated={"serial-1": datetime(2026, 10, 19, 11, 0, tzinfo=UTC)},
-        statistic_ids={"duke_energy:electric_serial-1_energy_consumption"},
+        statistic_ids={
+            "duke_energy:electric_serial-1_energy_consumption",
+            "duke_energy:account_private-account_temperature",
+        },
     )
 
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
@@ -36,15 +49,26 @@ async def test_diagnostics_redacts_token_material(
     assert "test-refresh-token" not in dump
     assert "test-user-id" not in dump
     assert "test@example.com" not in dump
+    assert "serial-1" not in dump
+    assert "private-account" not in dump
+    assert "sensor.private_rate" not in dump
+    assert "acct-1" not in dump
     assert result["coordinator"]["status"] == "complete"
     assert result["coordinator"]["last_poll"] == "2026-10-19T12:00:00+00:00"
-    assert result["coordinator"]["meters"]["serial-1"] == {
+    assert result["coordinator"]["meters"]["meter_1"] == {
         "service_type": "ELECTRIC",
         "last_updated": "2026-10-19T11:00:00+00:00",
     }
-    assert result["coordinator"]["statistic_ids"] == [
-        "duke_energy:electric_serial-1_energy_consumption"
-    ]
+    assert result["coordinator"]["statistics"] == {
+        "consumption": 1,
+        "cost": 0,
+        "temperature": 1,
+    }
+    assert result["entry"]["options"]["cost_meters"]["meter_1"] == {
+        "mode": "sensor",
+        "entity_id": "**REDACTED**",
+    }
+    assert "serial-1" in mock_config_entry.options["cost_meters"]
 
 
 async def test_diagnostics_without_coordinator(
@@ -52,9 +76,18 @@ async def test_diagnostics_without_coordinator(
     mock_config_entry: MockConfigEntry,
 ) -> None:
     """A failed setup still produces a redacted dump."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        options={"cost_meters": {"serial-2": {"mode": "static", "price": 0.15}}},
+    )
     mock_config_entry.runtime_data = None
 
     result = await async_get_config_entry_diagnostics(hass, mock_config_entry)
 
     assert result["coordinator"] is None
     assert result["entry"]["data"]["token"] == "**REDACTED**"
+    assert "serial-2" not in json.dumps(result)
+    assert result["entry"]["options"]["cost_meters"] == {
+        "meter_1": {"mode": "static", "price": 0.15}
+    }
