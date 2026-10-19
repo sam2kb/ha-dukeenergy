@@ -9,6 +9,8 @@ from contextlib import contextmanager
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
+from yarl import URL
+
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
@@ -54,6 +56,18 @@ def _make_oauth_data(id_token: str | None = None) -> dict[str, Any]:
             "expires_at": time.time() + 3600,
         },
     }
+
+
+CALLBACK_URI = "https://login.duke-energy.com/ios/com.duke-energy.app/callback"
+
+
+def _callback_url(authorize_url: str, **query: str) -> str:
+    """Build Duke's callback URL using the state issued for this flow."""
+    return str(
+        URL(CALLBACK_URI).with_query(
+            {"state": URL(authorize_url).query["state"], **query}
+        )
+    )
 
 
 def _make_flow(
@@ -147,15 +161,20 @@ async def test_abort_if_already_configured(
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER}
         )
-        assert result["type"] is FlowResultType.EXTERNAL_STEP
+        assert result["type"] is FlowResultType.FORM
+        assert result["step_id"] == "auth"
 
+        # The OAuth callback view resumes the flow with decoded state data.
         result = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {"code": "auth-code", "state": "state"}
+            result["flow_id"],
+            {
+                "code": "auth-code",
+                "state": {
+                    "flow_id": result["flow_id"],
+                    "redirect_uri": CALLBACK_URI,
+                },
+            },
         )
-        assert result["type"] is FlowResultType.EXTERNAL_STEP_DONE
-
-        result = await hass.config_entries.flow.async_configure(result["flow_id"])
-
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"
 
@@ -194,19 +213,141 @@ async def test_reauth_success(
 
         # Submit the confirm form — advances to pick_implementation → auth step.
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
-        assert result["type"] is FlowResultType.EXTERNAL_STEP
+        assert result["type"] is FlowResultType.FORM
+        assert result["step_id"] == "auth"
 
-        # Simulate the OAuth redirect callback.
+        # Paste the callback URL captured from another browser.
         result = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {"code": "auth-code", "state": "state"}
+            result["flow_id"],
+            {
+                "callback_url": _callback_url(
+                    result["description_placeholders"]["authorize_url"],
+                    code="auth-code",
+                )
+            },
         )
-        assert result["type"] is FlowResultType.EXTERNAL_STEP_DONE
-
-        # Final step: resolve token → async_oauth_create_entry → update entry.
-        result = await hass.config_entries.flow.async_configure(result["flow_id"])
-
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "reauth_successful"
+
+
+async def test_paste_callback_creates_entry(
+    recorder_mock: object,
+    enable_custom_integrations: object,
+    hass: HomeAssistant,
+    mock_setup_entry: AsyncMock,
+) -> None:
+    """Pasting the callback URL completes a fresh setup."""
+    with patch(
+        "custom_components.duke_energy.oauth.DukeEnergyOAuth2Implementation.async_resolve_external_data",
+        return_value=_make_oauth_data()["token"],
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+        assert result["type"] is FlowResultType.FORM
+        assert result["step_id"] == "auth"
+        authorize_url = result["description_placeholders"]["authorize_url"]
+
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {"callback_url": _callback_url(authorize_url, code="auth-code")},
+        )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "test@example.com"
+
+
+async def test_callback_view_creates_entry(
+    recorder_mock: object,
+    enable_custom_integrations: object,
+    hass: HomeAssistant,
+    mock_setup_entry: AsyncMock,
+) -> None:
+    """The extension's forwarded callback still completes the flow."""
+    with patch(
+        "custom_components.duke_energy.oauth.DukeEnergyOAuth2Implementation.async_resolve_external_data",
+        return_value=_make_oauth_data()["token"],
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+        assert result["type"] is FlowResultType.FORM
+
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {
+                "code": "auth-code",
+                "state": {"flow_id": result["flow_id"], "redirect_uri": CALLBACK_URI},
+            },
+        )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+
+async def test_paste_callback_rejects_authorization_error(
+    recorder_mock: object,
+    enable_custom_integrations: object,
+    hass: HomeAssistant,
+    mock_setup_entry: AsyncMock,
+) -> None:
+    """Duke returning access_denied is reported on the form, not a crash."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    authorize_url = result["description_placeholders"]["authorize_url"]
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {"callback_url": _callback_url(authorize_url, error="access_denied")},
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "authorize_rejected"}
+
+
+async def test_paste_callback_rejects_wrong_state(
+    recorder_mock: object,
+    enable_custom_integrations: object,
+    hass: HomeAssistant,
+    mock_setup_entry: AsyncMock,
+) -> None:
+    """A URL from another flow is rejected instead of exchanging its code."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {
+            "callback_url": str(
+                URL(CALLBACK_URI).with_query({"code": "auth-code", "state": "stale"})
+            )
+        },
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "state_mismatch"}
+
+
+async def test_paste_callback_rejects_missing_code(
+    recorder_mock: object,
+    enable_custom_integrations: object,
+    hass: HomeAssistant,
+    mock_setup_entry: AsyncMock,
+) -> None:
+    """A URL without a code is rejected with a copy-the-address message."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    authorize_url = result["description_placeholders"]["authorize_url"]
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {"callback_url": _callback_url(authorize_url)},
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "invalid_callback_url"}
 
 
 # ---------------------------------------------------------------------------
