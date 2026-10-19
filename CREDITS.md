@@ -14,7 +14,7 @@ The 2.2.0 release line is based on
 | --- | --- |
 | [Jason Hunter (@hunterjm)](https://github.com/hunterjm) | Original integration, the Auth0/OAuth rework, and the `aiodukeenergy` client |
 | [@crash0verride11](https://github.com/crash0verride11) | iOS OAuth refactor, the mobile User-Agent fix, gas and temperature statistics, per-meter cost statistics and options flow, account/meter devices, three-window polling, the statistics lifecycle fix, blocked-vs-auth error handling, and the test suite this fork builds on |
-| [@jdobbsclt](https://github.com/jdobbsclt) | Diagnosed the October 2026 desktop-browser login rejection and wrote the extension User-Agent rule (`aiodukeenergy` PR #23) |
+| [@jdobbsclt](https://github.com/jdobbsclt) | Diagnosed the October 2026 desktop-browser login rejection and the User-Agent workaround (`aiodukeenergy` PR #23) |
 | [@jojobird6](https://github.com/jojobird6) | Cost-statistic design and the investigation showing Duke's API exposes no per-interval cost (`ha-dukeenergy` PR #54, issue #53) |
 | [@jdahmen](https://github.com/jdahmen) | Manual callback-URL config flow (`ha-dukeenergy` PR #57) |
 | [@jameslb](https://github.com/jameslb) | Auth-resilience, diagnostics and effective-dated rate work (`ha-dukeenergy` PR #56 and fork branches) |

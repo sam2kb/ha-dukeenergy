@@ -17,7 +17,7 @@ from homeassistant.data_entry_flow import FlowResultType
 
 # Importing the flow handler registers it in config_entries.HANDLERS["duke_energy"].
 from custom_components.duke_energy.config_flow import DukeEnergyOAuth2FlowHandler  # noqa: F401
-from custom_components.duke_energy.const import DOMAIN
+from custom_components.duke_energy.const import DOMAIN, IOS_USER_AGENT
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 
@@ -246,6 +246,7 @@ async def test_paste_callback_creates_entry(
         )
         assert result["type"] is FlowResultType.FORM
         assert result["step_id"] == "auth"
+        assert result["description_placeholders"]["user_agent"] == IOS_USER_AGENT
         authorize_url = result["description_placeholders"]["authorize_url"]
 
         result = await hass.config_entries.flow.async_configure(
@@ -263,7 +264,7 @@ async def test_callback_view_creates_entry(
     hass: HomeAssistant,
     mock_setup_entry: AsyncMock,
 ) -> None:
-    """The extension's forwarded callback still completes the flow."""
+    """A forwarded callback still completes the flow."""
     with patch(
         "custom_components.duke_energy.oauth.DukeEnergyOAuth2Implementation.async_resolve_external_data",
         return_value=_make_oauth_data()["token"],
