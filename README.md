@@ -200,6 +200,10 @@ redacted log excerpt are enough to start a report.
   downloads. Using those files in the Energy dashboard requires separate
   import tooling.
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for the full history since this fork.
+
 ## Credits
 
 See [CREDITS.md](CREDITS.md). MIT licensed, see [LICENSE](LICENSE).
