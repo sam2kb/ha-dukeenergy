@@ -9,6 +9,8 @@ The 2.2.0 entry credits the features inherited from that base.
 
 ## [Unreleased]
 
+## [2.3.3] - 2026-10-19
+
 ### Changed
 
 - Clarified release notes, upstream attribution, polling and diagnostic details.
@@ -149,7 +151,8 @@ of the changes from hunterjm's 0.3.1 release:
 - **crash0verride11 v2.1.4**: the gas, cost, device, polling, statistics-retention
   and authentication improvements credited in the 2.2.0 entry above.
 
-[Unreleased]: https://github.com/sam2kb/ha-dukeenergy/compare/v2.3.2...HEAD
+[Unreleased]: https://github.com/sam2kb/ha-dukeenergy/compare/v2.3.3...HEAD
+[2.3.3]: https://github.com/sam2kb/ha-dukeenergy/releases/tag/v2.3.3
 [2.3.2]: https://github.com/sam2kb/ha-dukeenergy/releases/tag/v2.3.2
 [2.3.1]: https://github.com/sam2kb/ha-dukeenergy/releases/tag/v2.3.1
 [2.3.0]: https://github.com/sam2kb/ha-dukeenergy/releases/tag/v2.3.0
