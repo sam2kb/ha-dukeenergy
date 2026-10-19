@@ -18,6 +18,9 @@ ignore = [
 [lint.flake8-pytest-style]
 fixture-parentheses = false
 
+[lint.per-file-ignores]
+"scripts/*.py" = ["INP001"] # standalone build helper, not an importable package
+
 [lint.pyupgrade]
 keep-runtime-typing = true
 

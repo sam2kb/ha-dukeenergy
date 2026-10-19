@@ -4,14 +4,17 @@ __pycache__
 *.egg-info
 */build/*
 */dist/*
+/dist/
 
+# dev environment
+/custom_components/duke_energy/aiodukeenergy*
 
 # misc
 .coverage
 .vscode
 coverage.xml
 .ruff_cache
-
+*.DS_Store
 
 # Home Assistant configuration
 config/*

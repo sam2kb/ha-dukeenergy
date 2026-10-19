@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 import logging
+from http import HTTPStatus
 from typing import TYPE_CHECKING
 
-from aiodukeenergy import DukeEnergy
-from homeassistant.exceptions import ConfigEntryAuthFailed
+from aiodukeenergy_co import DukeEnergy
+from aiohttp import ClientError, ClientResponseError
+from homeassistant.components.recorder import (
+    get_instance,  # pyright: ignore[reportPrivateImportUsage]
+)
+from homeassistant.components.recorder.statistics import list_statistic_ids
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import aiohttp_client, config_entry_oauth2_flow
 
 from .api import DukeEnergyAuth
-from .const import DOMAIN
+from .const import DOMAIN, PLATFORMS
 from .coordinator import DukeEnergyConfigEntry, DukeEnergyCoordinator
 from .oauth import DukeEnergyOAuth2Implementation
 
@@ -41,9 +47,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: DukeEnergyConfigEntry) -
     )
     session = config_entry_oauth2_flow.OAuth2Session(hass, entry, implementation)
 
+    # Only a rejected refresh (4xx) or an unusable id_token is an auth
+    # failure; a network or Auth0 outage should retry setup, not prompt reauth.
     try:
         await session.async_ensure_token_valid()
-    except Exception as err:
+    except ClientResponseError as err:
+        if HTTPStatus.BAD_REQUEST <= err.status < HTTPStatus.INTERNAL_SERVER_ERROR:
+            raise ConfigEntryAuthFailed from err
+        raise ConfigEntryNotReady from err
+    except ClientError as err:
+        raise ConfigEntryNotReady from err
+    except ValueError as err:
+        # oauth.py:_adjust_token_expiry — id_token missing or undecodable.
         raise ConfigEntryAuthFailed from err
 
     auth = DukeEnergyAuth(aiohttp_client.async_get_clientsession(hass), session)
@@ -52,6 +67,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: DukeEnergyConfigEntry) -
     coordinator = DukeEnergyCoordinator(hass, client, entry)
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
+
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     return True
 
@@ -67,8 +84,24 @@ async def async_migrate_entry(
     return True
 
 
-async def async_unload_entry(
-    _hass: HomeAssistant, _entry: DukeEnergyConfigEntry
-) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: DukeEnergyConfigEntry) -> bool:
     """Unload a config entry."""
-    return True
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def async_remove_entry(
+    hass: HomeAssistant, _entry: DukeEnergyConfigEntry
+) -> None:
+    """
+    Clear this integration's external statistics when it is removed.
+
+    Statistics persist across reloads and restarts (see the coordinator's
+    _on_unload); they are only removed here, when the user deletes the entry.
+    """
+    instance = get_instance(hass)
+    all_stats = await instance.async_add_executor_job(list_statistic_ids, hass)
+    stat_ids = [
+        stat["statistic_id"] for stat in all_stats if stat.get("source") == DOMAIN
+    ]
+    if stat_ids:
+        instance.async_clear_statistics(stat_ids)

@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  extension:
+    name: "Attach extension zip"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Python
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Check tag matches manifest version
+        if: github.event_name == 'release'
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import sys
+
+          tag = os.environ["TAG"].removeprefix("v")
+          manifest = pathlib.Path(
+              "custom_components/duke_energy/manifest.json"
+          )
+          version = json.loads(manifest.read_text())["version"]
+          print(f"tag={tag} manifest={version}")
+          sys.exit(0 if tag == version else "manifest version does not match tag")
+          PY
+
+      - name: Build extension zip
+        run: python3 scripts/build_extension.py
+
+      - name: Upload extension asset
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG" dist/chrome-extension.zip --clobber

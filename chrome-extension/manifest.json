@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Duke Energy OAuth Helper",
+  "version": "1.0.2",
+  "description": "Captures Duke Energy OAuth redirects for the Duke Energy Home Assistant integration",
+  "permissions": ["webNavigation", "tabs", "declarativeNetRequest"],
+  "host_permissions": ["https://login.duke-energy.com/*"],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "mobile_user_agent",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Duke Energy OAuth Helper"
+  }
+}
