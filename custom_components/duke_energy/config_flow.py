@@ -32,7 +32,7 @@ from homeassistant.helpers.selector import (
 )
 from yarl import URL
 
-from .const import DOMAIN
+from .const import DOMAIN, IOS_USER_AGENT
 from .coordinator import _SUPPORTED_METER_TYPES, DukeEnergyConfigEntry
 from .oauth import DukeEnergyOAuth2Implementation
 
@@ -118,9 +118,8 @@ class DukeEnergyOAuth2FlowHandler(
         Two ways in:
 
         - the OAuth callback view resumes the flow with ``code``/``state`` (or
-          ``error``) when the OAuth helper extension forwards Duke's redirect;
-        - the form below accepts the callback URL pasted by the user, for
-          browsers where the extension is not available.
+          ``error``) when something forwards Duke's redirect;
+        - the form below accepts the callback URL pasted by the user.
         """
         # Callback view: user_input is the decoded external data (state is a
         # dict), not our form.
@@ -163,7 +162,10 @@ class DukeEnergyOAuth2FlowHandler(
         return self.async_show_form(
             step_id="auth",
             data_schema=STEP_AUTH_SCHEMA,
-            description_placeholders={"authorize_url": self._authorize_url},
+            description_placeholders={
+                "authorize_url": self._authorize_url,
+                "user_agent": IOS_USER_AGENT,
+            },
             errors=errors,
         )
 

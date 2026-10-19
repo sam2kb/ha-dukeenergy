@@ -20,14 +20,14 @@
             "default": "Successfully authenticated"
         },
         "error": {
-            "authorize_rejected": "Duke Energy rejected the sign-in before issuing a code. Enable the OAuth helper extension, or switch the browser to a mobile User-Agent, then start again.",
+            "authorize_rejected": "Duke Energy rejected the sign-in before issuing a code, which means the login page still saw a desktop browser. Set the mobile User-Agent from step 1, then start a fresh sign-in.",
             "invalid_callback_url": "That address is not a Duke Energy callback URL. Copy the entire address from the address bar after signing in, including everything after the '?'.",
             "state_mismatch": "That URL belongs to a different sign-in attempt. Open the sign-in link above again and paste the new address."
         },
         "step": {
             "auth": {
                 "title": "Authorize with Duke Energy",
-                "description": "1. [Sign in to Duke Energy]({authorize_url}) in Chrome or Edge with the OAuth helper extension, or in any browser using a mobile User-Agent.\n2. The browser ends up on a \"Not Found\" page. If the extension is active it forwards the code automatically; otherwise copy the complete address from the address bar.\n3. Paste the address below.",
+                "description": "**Step 1 - make Duke's login see a phone:**\n- **Firefox:** open `about:config`, add a **String** named `general.useragent.override`, and paste the iPhone value below. Reset it afterwards.\n- **Safari:** enable the Develop menu, then **Develop → User Agent → Safari — iOS 18 — iPhone**.\n- **Chrome/Edge:** press `F12`, then `Ctrl+Shift+M`, and pick an iPhone.\n\n**Step 2 - [sign in to Duke Energy]({authorize_url})** in that tab.\n\n**Step 3 - copy the whole address** from the \"Not Found\" page and paste it below.\n\nAfter you submit, Home Assistant downloads up to three years of usage. This can take a minute or two; don't remove the integration while it initializes.\n\niPhone User-Agent:\n`{user_agent}`",
                 "data": {
                     "callback_url": "Callback URL"
                 },
