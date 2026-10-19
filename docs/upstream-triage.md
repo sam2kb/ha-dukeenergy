@@ -29,6 +29,12 @@ a live reproduction.
   extension with the iOS User-Agent rewrite, plus our own CI, docs and release discipline.
   Keep the integration domain `duke_energy` so existing statistics history survives.
 
+> **Status (2026-10-19): executed.** Option A was taken: v2.1.4 base + the
+> extension User-Agent rule + diagnostics shipped as
+> [v2.2.0](https://github.com/sam2kb/ha-dukeenergy/releases/tag/v2.2.0).
+> CI is green (54 tests, Ruff, hassfest, HACS validation). The live Duke login
+> remains community-verified only.
+
 ---
 
 ## 1. Where upstream stands
