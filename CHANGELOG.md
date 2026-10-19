@@ -1,134 +1,153 @@
 # Changelog
 
-All notable changes to this fork, starting with its creation on 2026-10-19.
-Versions match `custom_components/duke_energy/manifest.json`.
+Release history for this fork, starting on 2026-10-19. Versions match
+`custom_components/duke_energy/manifest.json`.
 
-The fork builds on [hunterjm/ha-dukeenergy](https://github.com/hunterjm/ha-dukeenergy)
+This fork builds on [hunterjm/ha-dukeenergy](https://github.com/hunterjm/ha-dukeenergy)
 0.3.1 and [crash0verride11's v2.1.4](https://github.com/crash0verride11/ha-dukeenergy).
-The features that arrived with that base are listed separately in the 2.2.0
-entry, so our own changes stay visible.
+The 2.2.0 entry credits the features inherited from that base.
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- Clarified release notes, upstream attribution, polling and diagnostic details.
+- Consolidated the original fork research into
+  [maintenance notes](docs/upstream-research.md), preserving the full triage
+  report in Git history.
+- Updated the hassfest action pin to
+  `d05c25388490cd662baef8495e1bc764c3386153`. The hassfest action files are
+  unchanged from the previous pin.
 
 ## [2.3.2] - 2026-10-19
 
 ### Changed
 
-- Simplified the sign-in dialog to four steps: set the iPhone User-Agent, open
-  the sign-in link, copy the address Duke lands on, then paste it into
-  **Callback URL**.
-- README uses the same four steps as the dialog; per-browser detail stays in
-  the troubleshooting section.
+- Simplified the sign-in instructions in the README and setup dialog: change
+  the User-Agent to the supplied iPhone value, open the sign-in link and log in,
+  copy the redirected tab's address, then paste it into **Callback URL**.
+- Removed the browser-specific walkthroughs from the setup instructions.
 
 ## [2.3.1] - 2026-10-19
 
 ### Fixed
 
-- Removing one of several Duke Energy logins no longer clears the shared
-  external statistics. History is cleared only when the last entry is removed,
-  because statistic IDs carry no entry ownership marker.
+- Removing one Duke Energy login now preserves statistics while another login
+  remains configured. Removing the final login still clears all Duke Energy
+  statistics. Statistics cannot be assigned to individual logins because their
+  IDs do not record which entry created them.
 
 ### Changed
 
-- Diagnostics redact user-selected price entity IDs, replace meter serials and
-  internal account IDs with stable aliases (`meter_1`, ...), and report
-  statistics as counts per kind instead of exporting statistic IDs.
-- Pinned the API client to `aiodukeenergy-co==1.3.0` and added the
-  `aiodukeenergy_co` logger to the manifest.
-- CI installs from the lockfile (`--locked` / `--frozen`), the release check
-  validates tag, manifest and `pyproject.toml` versions, and HACS validation no
-  longer ignores brands.
-- README covers Energy dashboard setup, price units, historical backfills,
-  polling, updates and removal. CONTRIBUTING and the bug report template reflect
-  the current tooling and allow reports when setup fails before diagnostics
-  exist.
-- Bundled the official Duke Energy icons and logos under
-  `custom_components/duke_energy/brand/`, so HACS validation is self-contained.
-- Regression coverage for multiple logins, diagnostics redaction and repeated
-  gas imports against a real recorder; the suite is now 61 tests.
+- Diagnostics redact price-entity IDs and replace meter serials with local labels
+  such as `meter_1`. Statistics are reported as counts by type instead of
+  statistic IDs, which contain internal account IDs or meter serials.
+- Pinned the API client to `aiodukeenergy-co==1.3.0`, matching the tested version.
+  Added the `aiodukeenergy_co` logger so integration debug logging includes the
+  API client.
+- CI uses the dependency lockfile (`--locked` / `--frozen`). Release checks now
+  compare the tag, manifest and `pyproject.toml` versions; manual runs check the
+  project and manifest versions.
+- Bundled the official Duke Energy icons and logos in
+  `custom_components/duke_energy/brand/` and enabled HACS brand validation.
+- Expanded the README with Energy dashboard setup, price units, cost backfills,
+  polling, updates and removal behavior. Updated CONTRIBUTING and the bug-report
+  form, including reports where setup fails before diagnostics are available.
+- Aligned `scripts/lint` with CI's separate lint rules for integration code and
+  tests.
+
+### Validation
+
+- Added regression coverage for multiple logins, diagnostic redaction and
+  repeated gas imports using a real Home Assistant recorder.
+- All 61 tests, Ruff, hassfest and HACS validation passed.
 
 ## [2.3.0] - 2026-10-19
 
-### Removed
-
-- The Chrome/Edge OAuth helper extension, its build script and its release
-  asset. The OAuth callback path remains, so existing installs keep working,
-  but the repo no longer ships or maintains an extension.
-
 ### Changed
 
-- The auth dialog is now the instruction surface: per-browser User-Agent steps,
-  the iPhone User-Agent, the callback copy instructions and the import wait
+- Made pasted callback URLs the documented sign-in method. The setup dialog
+  includes sign-in instructions, the iPhone User-Agent and an initial-import
   notice.
-- README is paste-only, with a refreshed troubleshooting table including
-  "setup seems stuck".
-- The release workflow only verifies the tag/manifest version (it built the
-  extension before).
+- Updated README troubleshooting to explain the callback page and the wait
+  during the first usage import.
+- Reduced the release workflow to version verification after removing the
+  extension build and upload steps.
 
 ### Added
 
-- `IOS_USER_AGENT` in `const.py`, exposed to the dialog as `{user_agent}`.
+- A shared `IOS_USER_AGENT` constant in `const.py`, passed to the setup dialog
+  through the `{user_agent}` placeholder.
+
+### Removed
+
+- The Chrome/Edge OAuth helper extension, its build script and release asset.
+  Existing OAuth callback handling was retained.
 
 ## [2.2.1] - 2026-10-19
 
 ### Added
 
-- Paste-the-callback sign-in in the config flow: the dialog shows the sign-in
-  link and a **Callback URL** field, so Firefox, Safari and mobile work without
-  the helper.
-- Validation for rejected sign-ins (`access_denied`), missing codes and stale
-  state, with specific translated errors.
-- Reauthentication uses the same paste form.
-- Five new tests covering paste success, the callback view, rejected sign-in,
-  stale state and missing code (59 total).
+- A **Callback URL** field beside the sign-in link. Users can paste the address
+  returned by Duke in Firefox, Safari or a mobile browser.
+- Specific errors for rejected sign-ins (`access_denied`), missing authorization
+  codes and callback URLs from a different sign-in attempt.
+- The same callback form for reauthentication.
+- Five tests for pasted callbacks, callback-view handling, rejected sign-ins,
+  stale state and missing codes, bringing the suite to 59 tests.
 
 ### Changed
 
-- README: helper marked optional, per-browser User-Agent instructions and a
-  sign-in troubleshooting table.
+- Updated the README with User-Agent guidance and sign-in troubleshooting.
+  At this release, the OAuth helper was optional; it was removed in 2.3.0.
 
 ## [2.2.0] - 2026-10-19
 
 First release of this fork.
 
-### Added (fork)
+### Added in this fork
 
-- Config-entry diagnostics with token, title and identifier redaction.
-- CI: pytest, scoped Ruff, hassfest and HACS validation, plus a release check
-  that refuses a tag that disagrees with the manifest.
-- OAuth helper extension with a rule that sends an iPhone User-Agent to
-  `login.duke-energy.com` (removed in 2.3.0).
-- `CREDITS.md`, preserved MIT notices, rebranded manifest/HACS metadata and
-  repository description/topics.
+- Downloadable config-entry diagnostics with token, title and identifier
+  redaction.
+- Automated pytest and release-version checks, plus updates to the Ruff,
+  hassfest and HACS validation workflows.
+- An OAuth helper that sent an iPhone User-Agent to `login.duke-energy.com`.
+  This helper was removed in 2.3.0.
+- `CREDITS.md`, preserved MIT copyright notices, and updated repository,
+  manifest and HACS metadata.
 
-### Inherited with the v2.1.4 base
+### Inherited from crash0verride11 v2.1.4
 
-These were already in crash0verride11's fork and are the bulk of the delta from
-upstream 0.3.1:
+These features and fixes were already in the v2.1.4 base and account for most
+of the changes from hunterjm's 0.3.1 release:
 
-- Gas meter support (daily statistics in CCF) and daily temperature statistics.
-- Per-meter cost statistics from a price entity or a fixed rate, with optional
-  historical backfill.
-- Account and meter devices: status, last/next poll, bill-cycle and last-year
-  usage, bill balance/due date/status.
-- Three polls a day around 09:00/14:00/19:00 ET with a per-install
-  deterministic offset.
-- Statistics survive reloads and restarts (upstream cleared them on unload).
-- CDN/WAF blocks are retried instead of being treated as a lost credential, so
-  transient blocks no longer trigger reauthentication.
-- 52 tests.
+- Daily gas consumption statistics in CCF and daily temperature statistics.
+- Per-meter cost statistics using a price entity or a fixed rate, with optional
+  historical backfills.
+- Account and meter devices with update status, last and next poll times,
+  bill-cycle and prior-year usage and costs, bill balance, due date and status.
+- Up to three scheduled checks per day around 09:00, 14:00 and 19:00 Eastern,
+  shifted by a per-installation daily offset of up to two hours. Remaining
+  checks are skipped once every supported meter has yesterday's data.
+- Statistics survive reloads and restarts. The original integration cleared
+  them when it unloaded.
+- Separate handling for temporary Duke API CDN/WAF blocks and rejected
+  credentials. Blocked requests fail the poll and retry on the next schedule,
+  reducing unnecessary reauthentication prompts.
+- An existing suite of 52 tests.
 
-### Verification at release
+### Validation
 
-54 tests (52 inherited + 2 diagnostics), Ruff, hassfest and HACS validation.
+- All 54 tests passed: 52 inherited tests and two diagnostics tests.
+- Ruff, hassfest and HACS validation passed.
 
-## Pre-fork baseline
+## Earlier versions
 
-- **hunterjm 0.3.1** (2026-09-19): Auth0/iOS OAuth, id_token expiry handling,
-  electric-only hourly statistics, 12-hour polling, no test suite.
-- **crash0verride11 v2.1.4**: everything listed under 2.2.0 above.
+- **hunterjm 0.3.1** (2026-09-19): Auth0/iOS OAuth, `id_token` expiry handling,
+  hourly electricity statistics and 12-hour polling. This release had no test
+  suite.
+- **crash0verride11 v2.1.4**: the gas, cost, device, polling, statistics-retention
+  and authentication improvements credited in the 2.2.0 entry above.
 
 [Unreleased]: https://github.com/sam2kb/ha-dukeenergy/compare/v2.3.2...HEAD
 [2.3.2]: https://github.com/sam2kb/ha-dukeenergy/releases/tag/v2.3.2
