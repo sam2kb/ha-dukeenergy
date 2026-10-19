@@ -1,13 +1,13 @@
 {
   "domain": "duke_energy",
   "name": "Duke Energy",
-  "codeowners": ["@crash0verride11"],
+  "codeowners": ["@sam2kb"],
   "config_flow": true,
   "dependencies": ["recorder"],
-  "documentation": "https://github.com/crash0verride11/ha-dukeenergy",
+  "documentation": "https://github.com/sam2kb/ha-dukeenergy",
   "integration_type": "service",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/crash0verride11/ha-dukeenergy/issues",
-  "requirements": ["aiodukeenergy-co>=1.3.0"],
-  "version": "2.1.4"
+  "issue_tracker": "https://github.com/sam2kb/ha-dukeenergy/issues",
+  "requirements": ["aiodukeenergy-co>=1.3.0,<2"],
+  "version": "2.2.0"
 }

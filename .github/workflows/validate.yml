@@ -5,11 +5,7 @@ on:
   schedule:
     - cron:  "0 0 * * *"
   push:
-    branches:
-      - main
   pull_request:
-    branches:
-      - main
 
 permissions: {}
 
@@ -22,7 +18,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Run hassfest validation
-        uses: home-assistant/actions/hassfest@87c064c607f3c5cc673a24258d0c98d23033bfc3 # master
+        uses: home-assistant/actions/hassfest@dce0e860c68256ef2902ece06afa5401eb4674e1 # master
 
   hacs: # https://github.com/hacs/action
     name: HACS validation
@@ -32,5 +28,6 @@ jobs:
         uses: hacs/action@d556e736723344f83838d08488c983a15381059a # 22.5.0
         with:
           category: integration
-          # Remove this 'ignore' key when you have added brand images for your integration to https://github.com/home-assistant/brands
+          # Remove this 'ignore' key when brand images for this integration are
+          # available in https://github.com/home-assistant/brands
           ignore: brands

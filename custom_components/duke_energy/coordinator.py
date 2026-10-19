@@ -170,7 +170,7 @@ class DukeEnergyCoordinator(DataUpdateCoordinator[None]):
             update_interval=None,  # Scheduling is handled by _schedule_next_check.
         )
         self.api = api
-        self._statistic_ids: set = set()
+        self._statistic_ids: set[str] = set()
         self._last_successful_date: date | None = None
         # Sensor sources (see sensor.py):
         # when the last poll attempt ran (success or not), when each meter
@@ -201,6 +201,11 @@ class DukeEnergyCoordinator(DataUpdateCoordinator[None]):
         self._offset_date: date | None = None
 
         self.config_entry.async_on_unload(self._on_unload)
+
+    @property
+    def statistic_ids(self) -> set[str]:
+        """Return the external statistic IDs this entry has written."""
+        return set(self._statistic_ids)
 
     def _on_unload(self) -> None:
         """
@@ -275,7 +280,7 @@ class DukeEnergyCoordinator(DataUpdateCoordinator[None]):
             self.hass, _trigger_refresh, next_poll_time
         )
 
-    async def _async_update_data(self) -> None:
+    async def _async_update_data(self) -> None:  # noqa: PLR0912, PLR0915
         """Insert Duke Energy statistics."""
         # The coordinator only notifies listeners when the refresh finishes,
         # so the fetching phase needs an explicit push; the exit phase set in
@@ -422,8 +427,8 @@ class DukeEnergyCoordinator(DataUpdateCoordinator[None]):
                     self._stats_queued = True
                     if has_yesterday_data:
                         # Only the newest day counts as a change: every
-                        # update writes rows for polled period while 
-                        # Duke still has nothing for yesterday. 
+                        # update writes rows for polled period while
+                        # Duke still has nothing for yesterday.
                         self.meter_last_updated[serial_number] = dt_util.utcnow()
 
                 # Cost statistic (per-meter mode: sensor / static / off)
