@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 import base64
 import json
 import time
@@ -103,7 +105,7 @@ async def test_oauth_create_entry(
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "test@example.com"
-    # Unique ID is internal_identifier, not email — drives deduplication logic.
+    # Unique ID is internal_identifier, not email â€” drives deduplication logic.
     assert flow.unique_id == "test-user-id"
 
 
@@ -132,7 +134,7 @@ async def test_oauth_create_entry_aborts_on_missing_user_id(
 
 
 # ---------------------------------------------------------------------------
-# Flow-manager tests — drive the full async_init / async_configure path so
+# Flow-manager tests â€” drive the full async_init / async_configure path so
 # deduplication, result-dict shape, and the reauth success path are covered.
 # ---------------------------------------------------------------------------
 
@@ -211,7 +213,7 @@ async def test_reauth_success(
         assert result["type"] is FlowResultType.FORM
         assert result["step_id"] == "reauth_confirm"
 
-        # Submit the confirm form — advances to pick_implementation → auth step.
+        # Submit the confirm form â€” advances to pick_implementation â†’ auth step.
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
         assert result["type"] is FlowResultType.FORM
         assert result["step_id"] == "auth"
@@ -352,7 +354,7 @@ async def test_paste_callback_rejects_missing_code(
 
 
 # ---------------------------------------------------------------------------
-# Options flow — per-meter cost-entity selection.
+# Options flow â€” per-meter cost-entity selection.
 # ---------------------------------------------------------------------------
 
 
@@ -525,18 +527,20 @@ async def test_options_flow_sensor_mode_requires_entity(
     assert result["errors"] == {"base": "entity_required"}
 
 
+@pytest.mark.parametrize("price", [0, float("nan"), float("inf")])
 async def test_options_flow_static_mode_requires_positive_price(
     recorder_mock: object,
     enable_custom_integrations: object,
     hass: HomeAssistant,
+    price: float,
 ) -> None:
-    """Static mode rejects a non-positive rate."""
+    """Static mode rejects zero and non-finite rates."""
     entry = _entry_with_meters(hass, _ELECTRIC_METER)
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
     result = await _menu_select(hass, result["flow_id"], "123")
     result = await _configure_meter(
-        hass, result["flow_id"], {"mode": "static", "price": 0}
+        hass, result["flow_id"], {"mode": "static", "price": price}
     )
 
     assert result["type"] is FlowResultType.FORM
@@ -592,3 +596,18 @@ async def test_options_flow_backfill_schedules_reload(
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert entry.options["backfill_cost"] is True
     mock_reload.assert_called_once_with(entry.entry_id)
+
+
+@pytest.mark.parametrize("price", ["nan", "inf", "-inf"])
+async def test_options_flow_rejects_nonfinite_state_price(
+    recorder_mock, enable_custom_integrations, hass, price
+):
+    entry = _entry_with_meters(hass, _ELECTRIC_METER)
+    hass.states.async_set("sensor.price", price)
+    with _patch_price_validation(has_lts=False):
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await _menu_select(hass, result["flow_id"], "123")
+        result = await _configure_meter(
+            hass, result["flow_id"], {"mode": "sensor", "entity_id": "sensor.price"}
+        )
+    assert result["errors"] == {"base": "no_price_data"}

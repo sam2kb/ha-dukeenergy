@@ -52,10 +52,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: DukeEnergyConfigEntry) -
     try:
         await session.async_ensure_token_valid()
     except ClientResponseError as err:
-        if HTTPStatus.BAD_REQUEST <= err.status < HTTPStatus.INTERNAL_SERVER_ERROR:
+        if (
+            HTTPStatus.BAD_REQUEST <= err.status < HTTPStatus.INTERNAL_SERVER_ERROR
+            and err.status
+            not in (HTTPStatus.REQUEST_TIMEOUT, HTTPStatus.TOO_MANY_REQUESTS)
+        ):
             raise ConfigEntryAuthFailed from err
         raise ConfigEntryNotReady from err
-    except ClientError as err:
+    except (ClientError, TimeoutError) as err:
         raise ConfigEntryNotReady from err
     except ValueError as err:
         # oauth.py:_adjust_token_expiry — id_token missing or undecodable.

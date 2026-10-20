@@ -62,10 +62,16 @@ async def test_devices_and_diagnostic_sensors(
 
     registry = er.async_get(hass)
     device_registry = dr.async_get(hass)
-    account_device = device_registry.async_get_device(
-        identifiers={(DOMAIN, "account_src-1")}
+    account_device = device_registry.async_get(
+        registry.async_get(
+            _account_eid(hass, mock_config_entry, "src-1", "last_duke_poll")
+        ).device_id
     )
-    meter_device = device_registry.async_get_device(identifiers={(DOMAIN, "123")})
+    meter_device = device_registry.async_get(
+        registry.async_get(
+            _meter_eid(hass, mock_config_entry, "123", "last_meter_change")
+        ).device_id
+    )
     assert account_device is not None
     assert account_device.name == "Duke Energy Account acct-1"
     assert meter_device is not None

@@ -10,9 +10,17 @@ permissions:
 
 jobs:
   pytest:
-    name: "pytest"
+    name: "pytest (${{ matrix.profile }})"
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - profile: minimum
+            python: "3.13"
+          - profile: current
+            python: "3.14"
     steps:
       - name: Checkout the repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -20,13 +28,20 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
         with:
-          python-version: "3.13"
+          python-version: ${{ matrix.python }}
 
       - name: Install uv
         run: python3 -m pip install uv
 
-      - name: Install test dependencies
+      - name: Install locked minimum test dependencies
+        if: matrix.profile == 'minimum'
         run: uv sync --locked --all-groups
 
+      - name: Install pinned current HA test dependencies
+        if: matrix.profile == 'current'
+        run: |
+          uv venv .venv
+          uv pip install --python .venv/bin/python -r requirements-test-current.txt
+
       - name: Run tests
-        run: uv run --frozen pytest -q
+        run: .venv/bin/python -m pytest -q

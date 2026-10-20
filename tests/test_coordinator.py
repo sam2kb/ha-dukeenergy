@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from freezegun.api import FrozenDateTimeFactory
 
 from aiodukeenergy_co import DukeEnergyAuthError, DukeEnergyBlockedError
+from aiohttp import ClientConnectionError, ClientResponseError
 from homeassistant.components.recorder.models import StatisticMeanType
 from homeassistant.components.recorder.statistics import statistics_during_period
 from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntryState
@@ -218,6 +219,7 @@ async def test_gas_incremental_sum_with_real_recorder(
     mock_config_entry: MockConfigEntry,
     mock_api_with_gas_meter: AsyncMock,
     freezer: FrozenDateTimeFactory,
+    coordinator_cleanup: None,
 ) -> None:
     """A second gas import must not count the first stored day twice."""
     mock_config_entry.add_to_hass(hass)
@@ -627,3 +629,88 @@ async def test_cost_mode_off_skips(
 
     assert coordinator.last_update_success is True
     assert "duke_energy:electric_123_energy_cost" not in stats_store.data
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        TimeoutError(),
+        ClientConnectionError("offline"),
+        ClientResponseError(None, (), status=503),
+        ClientResponseError(None, (), status=429),
+        ClientResponseError(None, (), status=408),
+    ],
+)
+async def test_history_transient_failure_does_not_return_partial_success(
+    hass, mock_config_entry, mock_api_with_meters, failure
+):
+    """A failed older window must be retried, not accepted as complete history."""
+    mock_config_entry.add_to_hass(hass)
+    coordinator = DukeEnergyCoordinator(hass, mock_api_with_meters, mock_config_entry)
+    meter = mock_api_with_meters.get_meters.return_value["123"]
+    mock_api_with_meters.get_energy_usage.side_effect = [
+        {"data": {}, "missing": []},
+        failure,
+    ]
+    with pytest.raises(UpdateFailed):
+        await coordinator._async_get_energy_usage(meter)
+    assert mock_api_with_meters.get_energy_usage.await_count == 2
+
+
+async def test_native_shutdown_cancels_custom_poll_and_does_not_rearm(
+    hass, mock_config_entry, mock_api_with_meters
+):
+    mock_config_entry.add_to_hass(hass)
+    coordinator = DukeEnergyCoordinator(hass, mock_api_with_meters, mock_config_entry)
+    zone = ZoneInfo("America/New_York")
+    coordinator._schedule_next_check(zone, had_success=False)
+    assert coordinator._unsub_scheduled is not None
+    await coordinator.async_shutdown()
+    try:
+        assert coordinator._unsub_scheduled is None
+        coordinator._schedule_next_check(zone, had_success=False)
+        assert coordinator._unsub_scheduled is None
+    finally:
+        coordinator._on_unload()
+
+
+@pytest.mark.parametrize("price", ["nan", "inf", "-inf"])
+async def test_nonfinite_current_price_is_not_written_to_cost_history(
+    hass, mock_config_entry, mock_api_with_meters, price
+):
+    coordinator = DukeEnergyCoordinator(hass, mock_api_with_meters, mock_config_entry)
+    hass.states.async_set("sensor.price", price)
+    assert coordinator._get_current_price("sensor.price") is None
+
+
+async def test_consumption_resumes_when_api_window_no_longer_overlaps_recorder(
+    hass, mock_config_entry, mock_api_with_meters, stats_store
+):
+    mock_config_entry.add_to_hass(hass)
+    coordinator = DukeEnergyCoordinator(hass, mock_api_with_meters, mock_config_entry)
+    statistic_id = "duke_energy:electric_123_energy_consumption"
+    reading = next(iter(mock_api_with_meters.get_energy_usage.return_value["data"]))
+    old = reading - timedelta(days=90)
+    stats_store.seed(statistic_id, [{"start": old, "state": 1.0, "sum": 100.0}])
+    await coordinator.async_refresh()
+    assert coordinator.last_update_success is True
+    _, rows = _call_for(stats_store, statistic_id)
+    assert len(rows) == 1
+    assert rows[0]["sum"] == pytest.approx(101.3)
+
+
+@pytest.mark.parametrize("status", [400, 404])
+async def test_existing_history_boundary_response_keeps_available_data(
+    hass, mock_config_entry, mock_api_with_meters, status
+):
+    coordinator = DukeEnergyCoordinator(hass, mock_api_with_meters, mock_config_entry)
+    sample = mock_api_with_meters.get_energy_usage.return_value
+    mock_api_with_meters.get_energy_usage.side_effect = [
+        sample,
+        ClientResponseError(None, (), status=status),
+    ]
+    usage, interval = await coordinator._async_get_energy_usage(
+        mock_api_with_meters.get_meters.return_value["123"]
+    )
+    assert usage == sample["data"]
+    assert interval == "HOURLY"

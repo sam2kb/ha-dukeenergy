@@ -9,6 +9,15 @@ The 2.2.0 entry credits the features inherited from that base.
 
 ## [Unreleased]
 
+## [2.3.4] - 2026-10-20
+
+- Retry setup after OAuth timeouts and temporary HTTP 408/429 responses. Rejected token refreshes during normal polling now start Home Assistant reauthentication.
+- Retry interrupted historical usage requests after network failures, rate limits and server errors instead of treating partial history as a completed import. Preserve the existing handling of other 4xx history-boundary responses.
+- Resume consumption totals from the last recorded sum when Duke's returned data no longer overlaps stored history.
+- Cancel the custom poll timer during coordinator shutdown and prevent a late update from scheduling it again.
+- Reject non-finite current or static prices before using them for cost tracking.
+- Test against both the locked HA 2026.2 environment and pinned HA 2026.10.2, including native recorder imports and shutdown cleanup. Keep entity IDs, sign-in steps and existing history intact.
+
 ## [2.3.3] - 2026-10-19
 
 ### Changed
@@ -151,7 +160,8 @@ of the changes from hunterjm's 0.3.1 release:
 - **crash0verride11 v2.1.4**: the gas, cost, device, polling, statistics-retention
   and authentication improvements credited in the 2.2.0 entry above.
 
-[Unreleased]: https://github.com/sam2kb/ha-dukeenergy/compare/v2.3.3...HEAD
+[Unreleased]: https://github.com/sam2kb/ha-dukeenergy/compare/v2.3.4...HEAD
+[2.3.4]: https://github.com/sam2kb/ha-dukeenergy/releases/tag/v2.3.4
 [2.3.3]: https://github.com/sam2kb/ha-dukeenergy/releases/tag/v2.3.3
 [2.3.2]: https://github.com/sam2kb/ha-dukeenergy/releases/tag/v2.3.2
 [2.3.1]: https://github.com/sam2kb/ha-dukeenergy/releases/tag/v2.3.1

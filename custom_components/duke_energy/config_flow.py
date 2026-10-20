@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from math import isfinite
 from typing import TYPE_CHECKING, Any
 
 import jwt
@@ -352,7 +353,7 @@ class DukeEnergyOptionsFlow(OptionsFlow):
             elif mode == "static":
                 if price is None:
                     errors["base"] = "price_required"
-                elif price <= 0:
+                elif not isfinite(price) or price <= 0:
                     errors["base"] = "invalid_price"
                 else:
                     self._cost_meters[serial] = {"mode": "static", "price": price}
@@ -447,7 +448,7 @@ class DukeEnergyOptionsFlow(OptionsFlow):
         if state is None:
             return False
         try:
-            float(state.state)
+            price = float(state.state)
         except (ValueError, TypeError):
             return False
-        return True
+        return isfinite(price)

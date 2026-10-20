@@ -110,9 +110,12 @@ async def test_setup_entry_raises_on_token_validation_failure(
     "refresh_error",
     [
         ClientResponseError(Mock(), (), status=503),
+        ClientResponseError(Mock(), (), status=429),
+        ClientResponseError(Mock(), (), status=408),
+        TimeoutError(),
         ClientConnectorError(Mock(), OSError("dns")),
     ],
-    ids=["auth0_5xx", "network"],
+    ids=["auth0_5xx", "rate_limit", "request_timeout", "timeout", "network"],
 )
 async def test_setup_entry_token_refresh_outage_not_ready(
     hass: HomeAssistant,

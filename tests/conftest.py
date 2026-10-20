@@ -219,7 +219,25 @@ class StatsStore:
 
 
 @pytest.fixture
-def stats_store() -> Generator[StatsStore]:
+async def coordinator_cleanup(hass):
+    """Direct coordinator tests must run the same shutdown as a config entry."""
+    from custom_components.duke_energy.coordinator import DukeEnergyCoordinator
+
+    original = DukeEnergyCoordinator.__init__
+    instances = []
+
+    def track(instance, *args, **kwargs):
+        original(instance, *args, **kwargs)
+        instances.append(instance)
+
+    with patch.object(DukeEnergyCoordinator, "__init__", track):
+        yield
+        for instance in instances:
+            await instance.async_shutdown()
+
+
+@pytest.fixture
+def stats_store(coordinator_cleanup) -> Generator[StatsStore]:
     """Patch the coordinator's recorder access with a stateful StatsStore."""
     store = StatsStore()
 

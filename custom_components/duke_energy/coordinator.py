@@ -7,10 +7,12 @@ from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, tzinfo
+from http import HTTPStatus
+from math import isfinite
 from typing import Any, cast
 
 from aiodukeenergy_co import DukeEnergy, DukeEnergyAuthError, DukeEnergyBlockedError
-from aiohttp import ClientError
+from aiohttp import ClientError, ClientResponseError
 from homeassistant.components.recorder import (
     get_instance,  # pyright: ignore[reportPrivateImportUsage]
 )
@@ -220,6 +222,11 @@ class DukeEnergyCoordinator(DataUpdateCoordinator[None]):
             self._unsub_scheduled()
             self._unsub_scheduled = None
 
+    async def async_shutdown(self) -> None:
+        """Cancel both the native coordinator and our custom poll schedule."""
+        await super().async_shutdown()
+        self._on_unload()
+
     def _get_or_create_daily_offset(self, day: date) -> timedelta:
         """
         Return a stable deterministic offset for the given day.
@@ -243,6 +250,9 @@ class DukeEnergyCoordinator(DataUpdateCoordinator[None]):
 
         Applies a per-user per-day offset of up to ±2 hours.
         """
+        if self._shutdown_requested:
+            return
+
         if self._unsub_scheduled is not None:
             self._unsub_scheduled()
             self._unsub_scheduled = None
@@ -347,7 +357,7 @@ class DukeEnergyCoordinator(DataUpdateCoordinator[None]):
                     1,
                     consumption_statistic_id,
                     True,  # noqa: FBT003
-                    set(),
+                    {"sum"},
                 )
                 if not last_stat:
                     _LOGGER.debug("Updating statistic for the first time")
@@ -372,11 +382,12 @@ class DukeEnergyCoordinator(DataUpdateCoordinator[None]):
                         None,
                         {"sum"},
                     )
-                    consumption_sum = cast(
-                        "float",
-                        stats[consumption_statistic_id][0]["sum"],  # pyright: ignore[reportTypedDictNotRequiredAccess]
-                    )
-                    last_stats_time = stats[consumption_statistic_id][0]["start"]  # pyright: ignore[reportTypedDictNotRequiredAccess]
+                    baseline = (
+                        stats.get(consumption_statistic_id)
+                        or last_stat[consumption_statistic_id]
+                    )[0]
+                    consumption_sum = cast("float", baseline["sum"])
+                    last_stats_time = baseline["start"]
 
                 has_yesterday_data = any(k.date() == yesterday for k in usage)
                 yesterday_data_count += int(has_yesterday_data)
@@ -1024,9 +1035,10 @@ class DukeEnergyCoordinator(DataUpdateCoordinator[None]):
         if state is None or state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE, ""):
             return None
         try:
-            return float(state.state)
+            price = float(state.state)
         except (ValueError, TypeError):
             return None
+        return price if isfinite(price) else None
 
     async def _async_get_price_map(
         self,
@@ -1153,9 +1165,22 @@ class DukeEnergyCoordinator(DataUpdateCoordinator[None]):
                 # Make sure we don't go back too far
                 if end_step < start:
                     break
-            except (TimeoutError, ClientError):
-                # ClientError is raised when there is no more data for the range
-                break
+            except ClientResponseError as err:
+                if (
+                    HTTPStatus.BAD_REQUEST
+                    <= err.status
+                    < HTTPStatus.INTERNAL_SERVER_ERROR
+                    and err.status
+                    not in (HTTPStatus.REQUEST_TIMEOUT, HTTPStatus.TOO_MANY_REQUESTS)
+                ):
+                    # Preserve the existing boundary response handling. A
+                    # temporary outage is not evidence of the history horizon.
+                    break
+                msg = "Duke Energy history request failed; retry required"
+                raise UpdateFailed(msg) from err
+            except (TimeoutError, ClientError) as err:
+                msg = "Duke Energy history request failed; retry required"
+                raise UpdateFailed(msg) from err
 
         _LOGGER.debug("Got %s meter usage reads", len(usage))
         return usage, run_interval
