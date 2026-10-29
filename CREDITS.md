@@ -18,6 +18,7 @@ The 2.2.0 release line is based on
 | [@jojobird6](https://github.com/jojobird6) | Cost-statistic design and the investigation showing Duke's API exposes no per-interval cost (`ha-dukeenergy` PR #54, issue #53) |
 | [@jdahmen](https://github.com/jdahmen) | Manual callback-URL config flow (`ha-dukeenergy` PR #57) |
 | [@jameslb](https://github.com/jameslb) | Auth-resilience, diagnostics and effective-dated rate work (`ha-dukeenergy` PR #56 and fork branches) |
+| [@b-v-co](https://github.com/b-v-co) | Identified the October 2026 account-list route and response changes and supplied the [upstream fix](https://github.com/hunterjm/aiodukeenergy/pull/25) adapted here |
 | [@ndemarco](https://github.com/ndemarco) | Early gas meter support (`ha-dukeenergy` PRs #24, #25) |
 
 ## Reverse engineering and community research

@@ -55,13 +55,29 @@ consumption history.
 
 ## Questions that still need evidence
 
-- History pagination currently treats `TimeoutError` and `ClientError` as the
-  end of available data. Establish how Duke signals its historical data limit
-  before changing this behavior, so network failures and empty history can be
-  handled separately.
+- Version 2.3.4 retries historical requests after timeouts, connection failures,
+  HTTP 408/429 and server errors. Other 4xx responses still end pagination.
+  Establish how Duke signals its historical data limit before changing that
+  remaining behavior.
 - The original research did not establish support for separate Piedmont Natural
   Gas account systems. Validate the account and API coverage before making
   broader gas-service claims.
 - Treat Duke API and Home Assistant changes as separate compatibility concerns.
   Review client updates against the pinned dependency and run the existing
   tests before changing either.
+
+## October 2026 account discovery change
+
+[Issue #5](https://github.com/sam2kb/ha-dukeenergy/issues/5) reports successful
+OAuth and token exchange followed by a 403 from `account-list`. The
+[upstream patch by @b-v-co](https://github.com/hunterjm/aiodukeenergy/pull/25)
+uses `account/list` and normalizes the changed account response. Its reported
+live check covers one residential electric account; this fork also tests
+synthetic gas and multi-account responses.
+
+The integration overrides account discovery while `aiodukeenergy-co` 1.3.0
+still uses the retired route. It keeps the inherited request/authentication,
+meter, usage and billing methods. Preserve populated source IDs and original
+BP-number spellings; use the new spellings and source-field defaults when
+those values are missing or empty. A replacement upstream dependency must
+pass these transport regressions before the adapter can be removed.

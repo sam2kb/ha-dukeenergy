@@ -9,6 +9,10 @@ The 2.2.0 entry credits the features inherited from that base.
 
 ## [Unreleased]
 
+- Fix the setup failure in [#5](https://github.com/sam2kb/ha-dukeenergy/issues/5) after Duke retired `account-list`. Account discovery now uses `account/list`, accepts both BP-number spellings, and fills missing source fields needed by meter and usage requests. Keep source IDs supplied by Duke and the existing authentication flow.
+- Adapt [@b-v-co's upstream fix](https://github.com/hunterjm/aiodukeenergy/pull/25) to the pinned `aiodukeenergy-co` client without replacing its gas, billing or cost support.
+- Add mocked HTTP regressions for account discovery, electric/gas usage, billing, multiple accounts, cache refreshes and request failures. Test the current HA profile against 2026.10.4.
+
 ## [2.3.4] - 2026-10-20
 
 - Retry setup after OAuth timeouts and temporary HTTP 408/429 responses. Rejected token refreshes during normal polling now start Home Assistant reauthentication.

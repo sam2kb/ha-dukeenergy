@@ -6,7 +6,6 @@ import logging
 from http import HTTPStatus
 from typing import TYPE_CHECKING
 
-from aiodukeenergy_co import DukeEnergy
 from aiohttp import ClientError, ClientResponseError
 from homeassistant.components.recorder import (
     get_instance,  # pyright: ignore[reportPrivateImportUsage]
@@ -16,6 +15,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import aiohttp_client, config_entry_oauth2_flow
 
 from .api import DukeEnergyAuth
+from .api import DukeEnergyClient as DukeEnergy
 from .const import DOMAIN, PLATFORMS
 from .coordinator import DukeEnergyConfigEntry, DukeEnergyCoordinator
 from .oauth import DukeEnergyOAuth2Implementation

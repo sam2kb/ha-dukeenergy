@@ -94,6 +94,7 @@ sensors are summaries and should not be selected as Energy dashboard sources.
 | No `code` in the address | Sign-in did not complete | Reopen the current setup form's sign-in link with the mobile User-Agent applied |
 | "That URL belongs to a different sign-in attempt" | The pasted URL came from an older flow | Open the sign-in link from the current form again and paste the new address |
 | Setup seems stuck after submitting | It is importing up to three years of usage in 30-day windows | Wait a minute or two; check **Settings → System → Logs** only if it exceeds several minutes |
+| `403 Forbidden` on `/account-list` after successful sign-in | Duke retired the account-list route | Install a version containing the [account-route fix (#5)](https://github.com/sam2kb/ha-dukeenergy/issues/5), then restart Home Assistant. Signing in again will not repair the retired route. See [Unreleased](CHANGELOG.md#unreleased) for the fix status. |
 | `403 Access Denied` on token exchange | Duke's API edge blocked the request | Update the integration through HACS; if it persists, open an issue with diagnostics |
 | Reauthentication prompt never clears | A transient block was treated as a bad credential | Update to 2.2.0+; if it persists, download diagnostics (**Settings → Devices & services → Duke Energy → ⋮ → Download diagnostics**) and attach it to an issue |
 
