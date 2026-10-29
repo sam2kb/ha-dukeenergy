@@ -9,9 +9,11 @@ The 2.2.0 entry credits the features inherited from that base.
 
 ## [Unreleased]
 
+## [2.3.5] - 2026-10-29
+
 - Fix the setup failure in [#5](https://github.com/sam2kb/ha-dukeenergy/issues/5) after Duke retired `account-list`. Account discovery now uses `account/list`, accepts both BP-number spellings, and fills missing source fields needed by meter and usage requests. Keep source IDs supplied by Duke and the existing authentication flow.
 - Adapt [@b-v-co's upstream fix](https://github.com/hunterjm/aiodukeenergy/pull/25) to the pinned `aiodukeenergy-co` client without replacing its gas, billing or cost support.
-- Add mocked HTTP regressions for account discovery, electric/gas usage, billing, multiple accounts, cache refreshes and request failures. Test the current HA profile against 2026.10.4.
+- Add mocked HTTP regressions for account discovery, electric/gas usage, billing, multiple accounts, cache refreshes and request failures. Pass all 102 tests on HA 2026.2.3 and 2026.10.4.
 
 ## [2.3.4] - 2026-10-20
 
@@ -164,7 +166,8 @@ of the changes from hunterjm's 0.3.1 release:
 - **crash0verride11 v2.1.4**: the gas, cost, device, polling, statistics-retention
   and authentication improvements credited in the 2.2.0 entry above.
 
-[Unreleased]: https://github.com/sam2kb/ha-dukeenergy/compare/v2.3.4...HEAD
+[Unreleased]: https://github.com/sam2kb/ha-dukeenergy/compare/v2.3.5...HEAD
+[2.3.5]: https://github.com/sam2kb/ha-dukeenergy/releases/tag/v2.3.5
 [2.3.4]: https://github.com/sam2kb/ha-dukeenergy/releases/tag/v2.3.4
 [2.3.3]: https://github.com/sam2kb/ha-dukeenergy/releases/tag/v2.3.3
 [2.3.2]: https://github.com/sam2kb/ha-dukeenergy/releases/tag/v2.3.2
