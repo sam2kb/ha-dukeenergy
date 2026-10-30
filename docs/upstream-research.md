@@ -76,7 +76,7 @@ live check covers one residential electric account; this fork also tests
 synthetic gas and multi-account responses.
 
 Version 2.3.5 used a local account-discovery override because the pinned
-`aiodukeenergy-co` 1.3.0 still called the retired route. The next update pins
+`aiodukeenergy-co` 1.3.0 still called the retired route. Version 2.3.6 pins
 1.3.2 and removes that override. Transport regressions cover the library's
 source-ID preservation, missing/empty field defaults, multiple accounts and
 cache preservation after a failed refresh. When both BP-number spellings

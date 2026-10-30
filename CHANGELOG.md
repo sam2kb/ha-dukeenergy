@@ -9,6 +9,8 @@ The 2.2.0 entry credits the features inherited from that base.
 
 ## [Unreleased]
 
+## [2.3.6] - 2026-10-30
+
 - Update the pinned `aiodukeenergy-co` client to 1.3.2 and remove the local account-discovery override. The client now handles the account route change and sends bill-cycle summaries to Duke's new `account/usage/comparison` endpoint using the account number.
 - Fix the summary window on billing-cycle rollover day: keep the cycle that just ended until the new cycle has a day of usage. Adapted from [@crash0verride11's fix](https://github.com/crash0verride11/ha-dukeenergy/commit/f316ba0b7979236d8b0ba3f97fde57e2d0d4b6d9).
 
@@ -169,7 +171,8 @@ of the changes from hunterjm's 0.3.1 release:
 - **crash0verride11 v2.1.4**: the gas, cost, device, polling, statistics-retention
   and authentication improvements credited in the 2.2.0 entry above.
 
-[Unreleased]: https://github.com/sam2kb/ha-dukeenergy/compare/v2.3.5...HEAD
+[Unreleased]: https://github.com/sam2kb/ha-dukeenergy/compare/v2.3.6...HEAD
+[2.3.6]: https://github.com/sam2kb/ha-dukeenergy/releases/tag/v2.3.6
 [2.3.5]: https://github.com/sam2kb/ha-dukeenergy/releases/tag/v2.3.5
 [2.3.4]: https://github.com/sam2kb/ha-dukeenergy/releases/tag/v2.3.4
 [2.3.3]: https://github.com/sam2kb/ha-dukeenergy/releases/tag/v2.3.3
