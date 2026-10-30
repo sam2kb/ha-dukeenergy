@@ -75,9 +75,28 @@ uses `account/list` and normalizes the changed account response. Its reported
 live check covers one residential electric account; this fork also tests
 synthetic gas and multi-account responses.
 
-The integration overrides account discovery while `aiodukeenergy-co` 1.3.0
-still uses the retired route. It keeps the inherited request/authentication,
-meter, usage and billing methods. Preserve populated source IDs and original
-BP-number spellings; use the new spellings and source-field defaults when
-those values are missing or empty. A replacement upstream dependency must
-pass these transport regressions before the adapter can be removed.
+Version 2.3.5 used a local account-discovery override because the pinned
+`aiodukeenergy-co` 1.3.0 still called the retired route. The next update pins
+1.3.2 and removes that override. Transport regressions cover the library's
+source-ID preservation, missing/empty field defaults, multiple accounts and
+cache preservation after a failed refresh. When both BP-number spellings
+are populated, the library prefers the current `BP` spelling, with the legacy
+`Bp` spelling as a fallback.
+
+## October 2026 client and integration updates
+
+The [1.3.2 client release](https://github.com/crash0verride11/aiodukeenergy/releases/tag/v1.3.2)
+also moves monthly usage from `account/usage/monthly` to
+`account/usage/comparison`, using `accountNumber` instead of source IDs in
+that request. The response format is unchanged. Both electric and gas
+transport tests check the new route, account number and service units.
+
+[crash0verride11's rollover fix](https://github.com/crash0verride11/ha-dukeenergy/commit/f316ba0b7979236d8b0ba3f97fde57e2d0d4b6d9)
+is also included: on the day after a billing cycle ends, use that completed
+cycle's start until the new cycle has a day of usage. This keeps the summary
+start on or before its cutoff of yesterday.
+
+The fork's resilience and diagnostics commits backport changes already in
+this integration. Its manual sign-in and browser-extension changes serve its
+two sign-in paths; this fork keeps the existing callback form. Those changes
+do not need to be copied here.

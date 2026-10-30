@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from unittest.mock import DEFAULT, AsyncMock, Mock
 
+import pytest
 from aiohttp import ClientError
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.const import STATE_UNKNOWN, UnitOfEnergy, UnitOfVolume
@@ -290,6 +291,35 @@ async def test_billing_cycle_failure_without_cache(
     assert hass.states.get(this_id).state == STATE_UNKNOWN
     assert hass.states.get(last_id).state == "900.0"
     assert hass.states.get(cost_id).state == "185.5"
+
+
+@pytest.mark.parametrize(
+    "today,expected_start",
+    [
+        ("2026-06-27T12:00:00-04:00", datetime(2026, 5, 28)),
+        ("2026-06-28T12:00:00-04:00", datetime(2026, 6, 27)),
+    ],
+)
+async def test_billing_cycle_rollover_uses_a_valid_summary_window(
+    recorder_mock: object,
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_api_with_meters: AsyncMock,
+    stats_store: StatsStore,
+    auto_enable_custom_integrations: None,
+    freezer: FrozenDateTimeFactory,
+    today: str,
+    expected_start: datetime,
+) -> None:
+    """Keep the ended cycle until the new cycle has a day of usage."""
+    freezer.move_to(today)
+    mock_config_entry.add_to_hass(hass)
+    await _setup_entry(hass, mock_config_entry)
+
+    assert (
+        mock_api_with_meters.get_monthly_usage.await_args.kwargs["start_date"]
+        == expected_start
+    )
 
 
 async def test_billing_cycle_cached_start_reused(

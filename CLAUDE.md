@@ -69,7 +69,7 @@ uv run --frozen pytest tests/
 Or without a project venv (ephemeral):
 
 ```bash
-PYTHONPATH=. uvx --with "pytest-homeassistant-custom-component>=0.13.0" --with "freezegun>=1.5" --with "PyJWT>=2.8" --with "aiodukeenergy-co==1.3.0" pytest tests/
+PYTHONPATH=. uvx --with "pytest-homeassistant-custom-component>=0.13.0" --with "freezegun>=1.5" --with "PyJWT>=2.8" --with "aiodukeenergy-co==1.3.2" pytest tests/
 ```
 
 Key mocking notes:

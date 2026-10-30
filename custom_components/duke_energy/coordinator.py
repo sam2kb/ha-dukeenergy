@@ -593,7 +593,9 @@ class DukeEnergyCoordinator(DataUpdateCoordinator[None]):
         Derive the current bill cycle's start from the MONTHLY usage graph.
 
         The graph returns only completed cycles, so the current cycle starts
-        the day after the last entry's endDate. When the graph is unavailable,
+        the day after the last entry's endDate. On rollover day, keep the
+        completed cycle until the new cycle has a day of usage.
+        When the graph is unavailable,
         the last derived start is reused while plausibly still current — a
         cycle's start does not change mid-cycle, so a stale start is only
         possible right around a rollover. With no plausible start at all,
@@ -611,6 +613,11 @@ class DukeEnergyCoordinator(DataUpdateCoordinator[None]):
                 )
             cycles = result["data"]
             cycle_start = date.fromisoformat(cycles[-1]["endDate"]) + timedelta(days=1)
+            # The summary ends yesterday. Keep the completed cycle on rollover
+            # day until the new cycle has usage, rather than sending start > end.
+            # Adapted from crash0verride11/ha-dukeenergy commit f316ba0.
+            if cycle_start > end.date():
+                cycle_start = date.fromisoformat(cycles[-1]["startDate"])
         except (
             TimeoutError,
             ClientError,

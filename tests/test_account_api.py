@@ -1,4 +1,4 @@
-"""Exercise account discovery and inherited requests with mocked HTTP only."""
+"""Exercise the pinned client's account, usage and billing HTTP contracts."""
 
 import asyncio
 from datetime import datetime
@@ -129,17 +129,17 @@ async def test_empty_source_ids_and_legacy_bp_values_use_new_fields(
     assert transport.mock_calls[1][1].query["relatedBpNumber"] == "related-test"
 
 
-async def test_populated_legacy_bp_numbers_take_precedence(api_transport):
+async def test_current_bp_numbers_take_precedence_over_legacy_fields(api_transport):
     client, transport = api_transport
     payload = account_payload(legacy=True, explicit_ids=True)
-    payload["relatedBPNumber"] = "do-not-use"
-    payload["accounts"][0]["primaryBPNumber"] = "do-not-use"
+    payload["relatedBPNumber"] = "current-related"
+    payload["accounts"][0]["primaryBPNumber"] = "current-primary"
     transport.get(BASE + "/account/list", json=payload)
     transport.get(BASE + "/account-details-v2", json=meter_details())
     await client.get_accounts()
     query = transport.mock_calls[1][1].query
-    assert query["primaryBpNumber"] == "primary-test"
-    assert query["relatedBpNumber"] == "related-test"
+    assert query["primaryBpNumber"] == "current-primary"
+    assert query["relatedBpNumber"] == "current-related"
 
 
 @pytest.mark.parametrize(
@@ -149,11 +149,14 @@ async def test_populated_legacy_bp_numbers_take_precedence(api_transport):
         ("GAS", "DAILY", "WEEK", "10/27/2026"),
     ],
 )
+@pytest.mark.parametrize("explicit_ids", [False, True])
 async def test_new_accounts_feed_existing_usage_and_billing_methods(
-    api_transport, service, interval, period, series
+    api_transport, service, interval, period, series, explicit_ids
 ):
     client, transport = api_transport
-    transport.get(BASE + "/account/list", json=account_payload())
+    transport.get(
+        BASE + "/account/list", json=account_payload(explicit_ids=explicit_ids)
+    )
     transport.get(BASE + "/account-details-v2", json=meter_details(service))
     transport.post(
         BASE + "/account/usage/graph",
@@ -162,7 +165,8 @@ async def test_new_accounts_feed_existing_usage_and_billing_methods(
         },
     )
     transport.post(
-        BASE + "/account/usage/monthly", json={"thisPeriod": {"usage": "1.25"}}
+        BASE + "/account/usage/comparison",
+        json={"thisPeriod": {"totalUsage": 1.25}},
     )
     transport.get(
         BASE + "/billing-and-payment/multi-account-payment/info-v3",
@@ -174,16 +178,26 @@ async def test_new_accounts_feed_existing_usage_and_billing_methods(
     start = datetime(2026, 10, 27)
     usage = await client.get_energy_usage("meter-1", interval, period, start, start)
     assert next(iter(usage["data"].values()))["energy"] == 1.25
-    await client.get_monthly_usage("meter-1", start_date=start)
+    summary = await client.get_monthly_usage("meter-1", start_date=start)
+    assert summary["thisPeriod"]["totalUsage"] == 1.25
     billing = await client.get_billing_payment_info()
     assert billing["0000123456"]["balance"] == 10
     bodies = [call[2] for call in transport.mock_calls if call[0].upper() == "POST"]
     assert len(bodies) == 2
     for body in bodies:
-        assert body["srcSysCd"] == "ISU"
-        assert body["srcAcctId"] == "0000123456"
         assert body["serviceType"] == service
-    assert bodies[0]["srcAcctId2"] == ""
+    assert bodies[0]["srcSysCd"] == ("CUSTOM" if explicit_ids else "ISU")
+    assert bodies[0]["srcAcctId"] == (
+        "existing-source" if explicit_ids else "0000123456"
+    )
+    assert bodies[0]["srcAcctId2"] == ("secondary" if explicit_ids else "")
+    assert bodies[1]["accountNumber"] == "0000123456"
+    assert "srcSysCd" not in bodies[1]
+    assert "srcAcctId" not in bodies[1]
+    assert bodies[1]["meterNumber"] == "meter-1"
+    assert bodies[1]["unitOfMeasure"] == ("CCF" if service == "GAS" else "KWH")
+    assert bodies[1]["periodType"] == "BILLINGCYCLE"
+    assert bodies[1]["startDate"] == "10/27/2026"
     assert (
         len([call for call in transport.mock_calls if call[1].path == "/account/list"])
         == 1
