@@ -98,6 +98,77 @@ async def test_devices_and_diagnostic_sensors(
     assert dt_util.parse_datetime(hass.states.get(change_id).state) is not None
 
 
+@pytest.mark.parametrize("service", ["ELECTRIC", "GAS"])
+@pytest.mark.parametrize("pre_existing", [False, True])
+async def test_parent_links_use_registry_ids_and_preserve_existing_devices(
+    recorder_mock,
+    hass,
+    mock_config_entry,
+    mock_api_with_meters,
+    stats_store,
+    auto_enable_custom_integrations,
+    monkeypatch,
+    service,
+    pre_existing,
+):
+    """Fresh installs and reloads keep IDs without the deprecated tuple API."""
+    mock_config_entry.add_to_hass(hass)
+    mock_api_with_meters.get_meters.return_value["123"]["serviceType"] = service
+    devices = dr.async_get(hass)
+    old_ids = None
+    if pre_existing:
+        parent = devices.async_get_or_create(
+            config_entry_id=mock_config_entry.entry_id,
+            identifiers={(DOMAIN, "account_src-1")},
+        )
+        meter = devices.async_get_or_create(
+            config_entry_id=mock_config_entry.entry_id,
+            identifiers={(DOMAIN, "123")},
+        )
+        devices.async_update_device(
+            meter.id, via_device_id=parent.id, name_by_user="My meter"
+        )
+        old_ids = (parent.id, meter.id)
+    original_create = dr.DeviceRegistry.async_get_or_create
+
+    def create_without_legacy_link(registry, **kwargs):
+        assert "via_device" not in kwargs
+        return original_create(registry, **kwargs)
+
+    monkeypatch.setattr(
+        dr.DeviceRegistry, "async_get_or_create", create_without_legacy_link
+    )
+    await _setup_entry(hass, mock_config_entry)
+    entities = er.async_get(hass)
+    parent_id = entities.async_get(
+        _account_eid(hass, mock_config_entry, "src-1", "last_duke_poll")
+    ).device_id
+    meter_id = entities.async_get(
+        _meter_eid(hass, mock_config_entry, "123", "last_meter_change")
+    ).device_id
+    assert devices.async_get(meter_id).via_device_id == parent_id
+    assert devices.async_get(parent_id).identifiers == {(DOMAIN, "account_src-1")}
+    assert devices.async_get(meter_id).identifiers == {(DOMAIN, "123")}
+    if old_ids:
+        assert (parent_id, meter_id) == old_ids
+        assert devices.async_get(meter_id).name_by_user == "My meter"
+
+    def snapshot():
+        return sorted(
+            (entity.entity_id, entity.unique_id, entity.device_id)
+            for entity in er.async_entries_for_config_entry(
+                entities, mock_config_entry.entry_id
+            )
+        )
+
+    before_reload = snapshot()
+    assert len(before_reload) == 12
+    assert await hass.config_entries.async_reload(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert snapshot() == before_reload
+    assert devices.async_get(meter_id).via_device_id == parent_id
+
+
 async def test_summary_sensor_values(
     recorder_mock: object,
     hass: HomeAssistant,

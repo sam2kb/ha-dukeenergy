@@ -10,7 +10,7 @@ One account device per Duke Energy account, holding:
 - ``cost_last_bill_cycle`` / ``cost_last_year``: the account-wide bill
   amounts from the monthly usage summary.
 
-One meter device per supported meter (linked to its account via_device),
+One meter device per supported meter (linked to its account by registry ID),
 holding:
 
 - ``last_meter_change`` ("Last changed"): when new consumption statistics
@@ -32,6 +32,7 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
 )
 from homeassistant.const import UnitOfEnergy, UnitOfVolume
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -158,7 +159,7 @@ BILLING_SENSORS: tuple[DukeEnergyBillingSensorDescription, ...] = (
 
 
 async def async_setup_entry(
-    _hass: HomeAssistant,
+    hass: HomeAssistant,
     entry: DukeEnergyConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
@@ -167,16 +168,20 @@ async def async_setup_entry(
 
     Meters are enumerated once from the coordinator's first refresh (which
     completed before this platform was forwarded). Meters added later at
-    Duke Energy appear after a reload of the config entry. Account entities
-    are appended before their meters' so the account device exists when a
-    meter device references it via_device.
+    Duke Energy appear after a reload of the config entry. Account devices
+    and meter devices are registered before their parent links are assigned.
     """
     coordinator = entry.runtime_data
+    device_registry = dr.async_get(hass)
     entities: list[SensorEntity] = []
-    accounts_seen: set[str] = set()
+    account_devices: dict[str, str] = {}
     for serial_number, info in coordinator.meter_info.items():
-        if info.src_acct_id not in accounts_seen:
-            accounts_seen.add(info.src_acct_id)
+        if info.src_acct_id not in account_devices:
+            account_device = device_registry.async_get_or_create(
+                config_entry_id=entry.entry_id,
+                identifiers={(DOMAIN, f"account_{info.src_acct_id}")},
+            )
+            account_devices[info.src_acct_id] = account_device.id
             entities.append(
                 DukeEnergyStatusSensor(coordinator, entry, info.src_acct_id)
             )
@@ -198,6 +203,15 @@ async def async_setup_entry(
                 )
                 for description in BILLING_SENSORS
             )
+        meter_device = device_registry.async_get_or_create(
+            config_entry_id=entry.entry_id,
+            identifiers={(DOMAIN, serial_number)},
+        )
+        # This registry API is supported by the minimum HA version as well as
+        # current HA; DeviceInfo's old via_device tuple is deprecated.
+        device_registry.async_update_device(
+            meter_device.id, via_device_id=account_devices[info.src_acct_id]
+        )
         entities.append(
             DukeEnergyLastChangeSensor(coordinator, entry, serial_number, info)
         )
@@ -234,7 +248,6 @@ class DukeEnergyMeterEntity(CoordinatorEntity["DukeEnergyCoordinator"], SensorEn
             manufacturer="Duke Energy",
             model=f"{service} meter",
             serial_number=serial_number,
-            via_device=(DOMAIN, f"account_{info.src_acct_id}"),
         )
 
 

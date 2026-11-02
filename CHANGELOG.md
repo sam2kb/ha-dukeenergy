@@ -9,6 +9,8 @@ The 2.2.0 entry credits the features inherited from that base.
 
 ## [Unreleased]
 
+- Fix the deprecated device-link warning by linking meter devices to their account using the registry's `via_device_id`. Keep existing device and entity IDs.
+
 ## [2.3.7] - 2026-11-02
 
 - Catch up missing costs from recorded consumption, including usage older than Duke's recent fetch window. Keep existing cost rows unless a historical backfill is requested.
