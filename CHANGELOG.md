@@ -9,6 +9,8 @@ The 2.2.0 entry credits the features inherited from that base.
 
 ## [Unreleased]
 
+## [2.3.8] - 2026-11-02
+
 - Fix the deprecated device-link warning by linking meter devices to their account using the registry's `via_device_id`. Keep existing device and entity IDs.
 
 ## [2.3.7] - 2026-11-02
@@ -178,7 +180,8 @@ of the changes from hunterjm's 0.3.1 release:
 - **crash0verride11 v2.1.4**: the gas, cost, device, polling, statistics-retention
   and authentication improvements credited in the 2.2.0 entry above.
 
-[Unreleased]: https://github.com/sam2kb/ha-dukeenergy/compare/v2.3.7...HEAD
+[Unreleased]: https://github.com/sam2kb/ha-dukeenergy/compare/v2.3.8...HEAD
+[2.3.8]: https://github.com/sam2kb/ha-dukeenergy/releases/tag/v2.3.8
 [2.3.7]: https://github.com/sam2kb/ha-dukeenergy/releases/tag/v2.3.7
 [2.3.6]: https://github.com/sam2kb/ha-dukeenergy/releases/tag/v2.3.6
 [2.3.5]: https://github.com/sam2kb/ha-dukeenergy/releases/tag/v2.3.5
