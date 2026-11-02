@@ -275,11 +275,10 @@ class DukeEnergyOptionsFlow(OptionsFlow):
         """Show the meter menu and route to the chosen meter or to Save."""
         if not hasattr(self, "_meters"):
             coordinator = self.config_entry.runtime_data
-            meters = await coordinator.api.get_meters()
             self._meters = {
-                serial: meter
-                for serial, meter in meters.items()
-                if meter.get("serviceType") in _SUPPORTED_METER_TYPES
+                serial: {"serviceType": info.service_type}
+                for serial, info in coordinator.meter_info.items()
+                if info.service_type in _SUPPORTED_METER_TYPES
             }
             if not self._meters:
                 return self.async_abort(reason="no_meters")
@@ -411,25 +410,55 @@ class DukeEnergyOptionsFlow(OptionsFlow):
         """Persist the per-meter configuration and optionally backfill."""
         if user_input is not None:
             backfill = user_input.get("backfill_cost", False)
-            # Only reload when backfill is requested; otherwise the coordinator
-            # picks up the new configuration at its next scheduled poll. A reload
-            # (not async_request_refresh) is required because a fresh coordinator
-            # resets _last_successful_date, bypassing the "already retrieved
-            # today" guard that would otherwise defer the backfill.
             if backfill:
-                self.hass.config_entries.async_schedule_reload(
-                    self.config_entry.entry_id
+                self._rebuild_task = self.hass.async_create_task(
+                    self.config_entry.runtime_data.async_rebuild_costs(
+                        self._cost_meters
+                    ),
+                    name="duke_energy_cost_rebuild",
                 )
-            return self.async_create_entry(
-                data={"cost_meters": self._cost_meters, "backfill_cost": backfill}
-            )
+                return await self.async_step_rebuild()
+            return await self.async_step_finish()
 
-        # Backfill always defaults to off: it is a one-shot action the coordinator
-        # resets after populating history, so it should never persist as enabled.
+        # Each rebuild needs an explicit request; never save it as a recurring
+        # action or make it the default on the next visit.
         schema = vol.Schema(
             {vol.Optional("backfill_cost", default=False): BooleanSelector()}
         )
-        return self.async_show_form(step_id="save", data_schema=schema)
+        return self.async_show_form(
+            step_id="save",
+            data_schema=schema,
+            errors={"base": "cost_rebuild_failed"}
+            if getattr(self, "_rebuild_error", False)
+            else {},
+        )
+
+    async def async_step_rebuild(
+        self, _user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show progress while stored consumption is repriced locally."""
+        if not self._rebuild_task.done():
+            return self.async_show_progress(
+                step_id="rebuild",
+                progress_action="rebuild_cost",
+                progress_task=self._rebuild_task,
+            )
+        try:
+            self._rebuild_task.result()
+        except Exception:  # The form must report recorder/price failures.
+            _LOGGER.exception("Could not rebuild Duke Energy costs")
+            self._rebuild_error = True
+            return self.async_show_progress_done(next_step_id="save")
+        self._rebuild_error = False
+        return self.async_show_progress_done(next_step_id="finish")
+
+    async def async_step_finish(
+        self, _user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Save price settings without persisting a recurring rebuild request."""
+        return self.async_create_entry(
+            data={"cost_meters": self._cost_meters, "backfill_cost": False}
+        )
 
     async def _entity_usable_for_price(self, entity_id: str) -> bool:
         """

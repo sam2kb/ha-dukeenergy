@@ -75,11 +75,15 @@
           "backfill_cost": "Backfill historical cost"
         },
         "data_description": {
-          "backfill_cost": "Enabling reloads the integration and reprices all past usage for every configured meter using the earliest available or static price. Leave off to price only new usage."
+          "backfill_cost": "Reprice all stored consumption for every meter with cost tracking enabled. This uses the earliest available or static price and replaces historical cost values. Leave off to keep existing costs and catch up unpriced usage at the next poll."
         }
       }
     },
+    "progress": {
+      "rebuild_cost": "Rebuilding costs from stored consumption. This may take a moment."
+    },
     "error": {
+      "cost_rebuild_failed": "Costs could not be rebuilt. Check that the price entity is available, then try again. The previous settings have not been changed.",
       "no_price_data": "The selected entity has no long-term statistics or a numeric current value.",
       "entity_required": "Select a price entity, or choose a different cost source.",
       "price_required": "Enter a static price, or choose a different cost source.",

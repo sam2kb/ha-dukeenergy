@@ -9,6 +9,8 @@ The 2.2.0 entry credits the features inherited from that base.
 
 ## [Unreleased]
 
+- Catch up missing costs from recorded consumption, including usage older than Duke's recent fetch window. Keep existing cost rows unless a historical backfill is requested.
+- Rebuild historical costs directly from the Configure dialog without reloading the integration or fetching usage from Duke. Show progress and report failures in the dialog.
 ## [2.3.6] - 2026-10-30
 
 - Update the pinned `aiodukeenergy-co` client to 1.3.2 and remove the local account-discovery override. The client now handles the account route change and sends bill-cycle summaries to Duke's new `account/usage/comparison` endpoint using the account number.

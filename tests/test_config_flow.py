@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import pytest
 
 import base64
@@ -393,6 +394,11 @@ def _entry_with_meters(hass: HomeAssistant, meters: dict) -> MockConfigEntry:
     entry.add_to_hass(hass)
     coordinator = Mock()
     coordinator.api.get_meters = AsyncMock(return_value=meters)
+    coordinator.meter_info = {
+        serial: Mock(service_type=meter["serviceType"])
+        for serial, meter in meters.items()
+    }
+    coordinator.async_rebuild_costs = AsyncMock()
     entry.runtime_data = coordinator
     return entry
 
@@ -572,13 +578,19 @@ async def test_options_flow_state_only_entity_allowed(
     }
 
 
-async def test_options_flow_backfill_schedules_reload(
+async def test_options_flow_backfill_runs_locally_without_reload(
     recorder_mock: object,
     enable_custom_integrations: object,
     hass: HomeAssistant,
 ) -> None:
-    """Enabling backfill schedules a reload; leaving it off does not."""
+    """Explicit backfill uses stored data and never reloads or calls Duke."""
     entry = _entry_with_meters(hass, _ELECTRIC_METER)
+    rebuild_gate = asyncio.Event()
+
+    async def rebuild(_cost_meters):
+        await rebuild_gate.wait()
+
+    entry.runtime_data.async_rebuild_costs.side_effect = rebuild
 
     with (
         _patch_price_validation(has_lts=True),
@@ -592,10 +604,75 @@ async def test_options_flow_backfill_schedules_reload(
             {"mode": "sensor", "entity_id": "sensor.price"},
         )
         result = await _save(hass, result["flow_id"], backfill=True)
+        assert result["type"] is FlowResultType.SHOW_PROGRESS
+        rebuild_gate.set()
+        await hass.async_block_till_done()
+        result = await hass.config_entries.options.async_configure(result["flow_id"])
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert entry.options["backfill_cost"] is True
-    mock_reload.assert_called_once_with(entry.entry_id)
+    assert entry.options["backfill_cost"] is False
+    entry.runtime_data.async_rebuild_costs.assert_awaited_once_with(
+        {"123": {"mode": "sensor", "entity_id": "sensor.price"}}
+    )
+    entry.runtime_data.api.get_meters.assert_not_awaited()
+    mock_reload.assert_not_called()
+
+
+async def test_options_flow_rebuild_error_is_visible_and_retryable(
+    recorder_mock, enable_custom_integrations, hass
+):
+    entry = _entry_with_meters(hass, _ELECTRIC_METER)
+    gate = asyncio.Event()
+
+    async def fail(_cost_meters):
+        await gate.wait()
+        raise ValueError("Price unavailable")
+
+    entry.runtime_data.async_rebuild_costs.side_effect = fail
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await _menu_select(hass, result["flow_id"], "123")
+    result = await _configure_meter(
+        hass, result["flow_id"], {"mode": "static", "price": 0.2}
+    )
+    result = await _save(hass, result["flow_id"], backfill=True)
+    assert result["type"] is FlowResultType.SHOW_PROGRESS
+    gate.set()
+    await hass.async_block_till_done()
+    result = await hass.config_entries.options.async_configure(result["flow_id"])
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "save"
+    assert result["errors"] == {"base": "cost_rebuild_failed"}
+    assert entry.options == {}
+    entry.runtime_data.async_rebuild_costs.side_effect = None
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"backfill_cost": True}
+    )
+    await hass.async_block_till_done()
+    if result["type"] is not FlowResultType.CREATE_ENTRY:
+        result = await hass.config_entries.options.async_configure(result["flow_id"])
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options["cost_meters"] == {"123": {"mode": "static", "price": 0.2}}
+    assert entry.runtime_data.async_rebuild_costs.await_count == 2
+
+
+async def test_options_flow_rebuild_runs_again_with_unchanged_settings(
+    recorder_mock, enable_custom_integrations, hass
+):
+    entry = _entry_with_meters(hass, _ELECTRIC_METER)
+    for _ in range(2):
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await _menu_select(hass, result["flow_id"], "123")
+        result = await _configure_meter(
+            hass, result["flow_id"], {"mode": "static", "price": 0.2}
+        )
+        result = await _save(hass, result["flow_id"], backfill=True)
+        await hass.async_block_till_done()
+        if result["type"] is not FlowResultType.CREATE_ENTRY:
+            result = await hass.config_entries.options.async_configure(
+                result["flow_id"]
+            )
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.runtime_data.async_rebuild_costs.await_count == 2
 
 
 @pytest.mark.parametrize("price", ["nan", "inf", "-inf"])

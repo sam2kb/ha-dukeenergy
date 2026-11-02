@@ -104,8 +104,9 @@ After setup, open the integration's **Configure** dialog and pick a meter:
 
 - **Entity price:** a sensor's long-term statistics supply historical prices,
   so a template sensor can represent time-of-use or seasonal rates. If there
-  are no price statistics in the fetched window, a numeric current state is
-  used as a flat rate. This also allows `number` and `input_number` entities.
+  are no price statistics in the unpriced usage window, a numeric current
+  state is used as a flat rate. This also allows `number` and `input_number`
+  entities.
 - **Static price:** one fixed rate.
 - **Do not track:** stops adding costs for that meter and keeps existing cost
   history.
@@ -117,12 +118,14 @@ are not added automatically.
 
 Choose **Save and apply**, then submit the historical-cost form. Without a
 backfill, the new settings apply at the next poll. Existing cost rows stay in
-place, and only intervals newer than the last cost row are added. When you
-first enable costs, this can include recently fetched usage.
+place, and costs catch up from stored consumption after the last cost row.
+When you first enable costs, this can include older recorded usage. A price
+change does not automatically reprice existing cost rows.
 
-**Backfill historical cost** reloads the integration and recomputes stored usage
-history for every meter with cost tracking enabled. A static rate applies to
-the whole history. With a price entity, gaps carry the preceding price forward;
+**Backfill historical cost** recomputes costs from stored consumption for every
+meter with cost tracking enabled, without reloading or fetching usage from Duke.
+A static rate applies to the whole history. With a price entity, gaps carry the
+preceding price forward;
 usage before the first recorded price uses that earliest price. If no price
 history exists, the current numeric value prices the whole history. Backfill
 replaces historical cost values, so enable it only when you intend to reprice
