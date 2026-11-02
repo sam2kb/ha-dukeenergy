@@ -9,8 +9,11 @@ The 2.2.0 entry credits the features inherited from that base.
 
 ## [Unreleased]
 
+## [2.3.7] - 2026-11-02
+
 - Catch up missing costs from recorded consumption, including usage older than Duke's recent fetch window. Keep existing cost rows unless a historical backfill is requested.
 - Rebuild historical costs directly from the Configure dialog without reloading the integration or fetching usage from Duke. Show progress and report failures in the dialog.
+
 ## [2.3.6] - 2026-10-30
 
 - Update the pinned `aiodukeenergy-co` client to 1.3.2 and remove the local account-discovery override. The client now handles the account route change and sends bill-cycle summaries to Duke's new `account/usage/comparison` endpoint using the account number.
@@ -173,7 +176,8 @@ of the changes from hunterjm's 0.3.1 release:
 - **crash0verride11 v2.1.4**: the gas, cost, device, polling, statistics-retention
   and authentication improvements credited in the 2.2.0 entry above.
 
-[Unreleased]: https://github.com/sam2kb/ha-dukeenergy/compare/v2.3.6...HEAD
+[Unreleased]: https://github.com/sam2kb/ha-dukeenergy/compare/v2.3.7...HEAD
+[2.3.7]: https://github.com/sam2kb/ha-dukeenergy/releases/tag/v2.3.7
 [2.3.6]: https://github.com/sam2kb/ha-dukeenergy/releases/tag/v2.3.6
 [2.3.5]: https://github.com/sam2kb/ha-dukeenergy/releases/tag/v2.3.5
 [2.3.4]: https://github.com/sam2kb/ha-dukeenergy/releases/tag/v2.3.4
