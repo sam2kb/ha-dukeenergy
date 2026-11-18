@@ -50,25 +50,35 @@ Manual install: copy `custom_components/duke_energy/` into your HA
 
 Open **Settings → Devices & services → Add integration → Duke Energy**, then:
 
-1. Change your browser's User-Agent to the iPhone value below.
+1. Emulate an iPhone **before** you open the sign-in link: Chrome's device
+   toolbar (`Ctrl+Shift+M`) or Firefox's Responsive Design Mode, with an iPhone
+   preset. Changing only a User-Agent string is not enough in Chrome, because
+   the browser still reports its desktop platform through client hints.
 2. Open the sign-in link shown in the integration and log in to Duke Energy.
-3. When Duke redirects or opens a tab, copy the entire address from that tab's
-   address bar, including the `code` and `state` parameters.
+   Stay in that tab. Signing in at `www.duke-energy.com` does not work: that is
+   the public site, and it never redirects to the integration's callback.
+3. When Duke redirects, copy the entire address from the address bar. It starts
+   with `https://login.duke-energy.com/ios/com.duke-energy.app/callback` and
+   contains a `code` parameter.
 4. Paste the address into **Callback URL** in the integration UI and submit.
 
 Keep the setup form open until you submit the URL. Treat that URL as a sign-in
-credential and keep it out of issue reports and screenshots. Restore your usual
-User-Agent when you are done.
+credential and keep it out of issue reports and screenshots. Turn device
+emulation off when you are done.
 
 Home Assistant then imports up to three years of usage. This can take a minute
 or two; leave the integration in place while it initializes. The account's
 **Status** sensor shows **Fetching**, **Recording**, then **Finished**.
 
-iPhone User-Agent:
+iPhone User-Agent, if your emulation mode or extension asks for one:
 
 ```
 Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1
 ```
+
+An extension is optional. [hunterjm/aiodukeenergy#23](https://github.com/hunterjm/aiodukeenergy/pull/23)
+adds a rule to the Chrome extension that sends this User-Agent and strips the
+client hints, which removes the need for emulation.
 
 ### 3. Add usage to the Energy dashboard
 
@@ -89,9 +99,11 @@ sensors are summaries and should not be selected as Energy dashboard sources.
 
 | What you see | Cause | What to do |
 | --- | --- | --- |
-| `access_denied` / "An error has occurred" instead of a code | Duke's login still saw a desktop browser | Apply the mobile User-Agent, then start a fresh sign-in |
-| "Not Found" page with `code` and `state` in the address | This is the expected landing page | Copy the whole address into **Callback URL** |
-| No `code` in the address | Sign-in did not complete | Reopen the current setup form's sign-in link with the mobile User-Agent applied |
+| `access_denied` / "An error has occurred" instead of a code | Duke's login still saw a desktop browser | Turn on iPhone emulation, then start a fresh sign-in from the current form |
+| "Not Found" **before** signing in, with no `code` in the address | Duke's login refused a desktop browser | Turn on iPhone emulation first, then reopen the link from the setup form |
+| You signed in at `www.duke-energy.com` and see no `code` | That is the public site, not the integration's sign-in | Use the link shown in the setup form |
+| "Not Found" page **with** `code` and `state` in the address | This is the expected landing page | Copy the whole address into **Callback URL** |
+| No `code` in the address | Sign-in did not complete | Reopen the current setup form's sign-in link with iPhone emulation still on |
 | "That URL belongs to a different sign-in attempt" | The pasted URL came from an older flow | Open the sign-in link from the current form again and paste the new address |
 | Setup seems stuck after submitting | It is importing up to three years of usage in 30-day windows | Wait a minute or two; check **Settings → System → Logs** only if it exceeds several minutes |
 | `403 Forbidden` on `/account-list` after successful sign-in | Duke retired the account-list route | Update to **2.3.5 or newer**, then restart Home Assistant. Signing in again will not repair the retired route. See [#5](https://github.com/sam2kb/ha-dukeenergy/issues/5) for details. |
