@@ -134,11 +134,16 @@ async def test_daily_temperature_is_the_mean_of_the_days_readings(
     mock_api_with_meters: AsyncMock,
     stats_store: StatsStore,
 ) -> None:
-    """A day with several readings stores their mean, not the first one."""
+    """A day with several readings stores their mean, and an existing row is restated."""
     mock_config_entry.add_to_hass(hass)
     coordinator = DukeEnergyCoordinator(hass, mock_api_with_meters, mock_config_entry)
     tz = ZoneInfo("America/New_York")
     day = datetime(2026, 7, 1, tzinfo=tz)
+    # A row written before the mean was stored: it must be corrected, not skipped.
+    stats_store.seed(
+        "duke_energy:account_src-1_temperature",
+        [{"start": datetime(2026, 7, 1, 12, tzinfo=tz), "mean": 60}],
+    )
     mock_api_with_meters.get_energy_usage.return_value = {
         "data": {
             day.replace(hour=0): {"energy": 1.0, "temperature": 60},

@@ -11,7 +11,7 @@ The 2.2.0 entry credits the features inherited from that base.
 
 - Fetch usage history in batches of three concurrent 30-day requests instead of one at a time, cutting first-load time by about two thirds. Keep the existing handling of history boundaries and failed requests. Adapted from [hunterjm/ha-dukeenergy#63](https://github.com/hunterjm/ha-dukeenergy/pull/63).
 - Treat a 401 or 403 from the usage endpoint as an authentication failure that starts reauthentication. A rejected token previously looked like the end of Duke Energy's history, silently truncating the import while the cached token stayed rejected.
-- Record the daily temperature as the mean of the day's readings. Taking the first reading stored a midnight value under the noon timestamp, so the temperature history did not match the daily average.
+- Record the daily temperature as the mean of the day's readings, and restate the rows for every day in each poll's window. Taking the first reading stored a midnight value under the noon timestamp, so the temperature history did not match the daily average; days recorded under the old value are corrected the next time they fall inside the window.
 
 ## [2.3.8] - 2026-11-02
 

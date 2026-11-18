@@ -456,34 +456,19 @@ class DukeEnergyCoordinator(DataUpdateCoordinator[None]):
                 temperature_statistic_id = f"{DOMAIN}:account_{src_acct_id}_temperature"
                 self._statistic_ids.add(temperature_statistic_id)
 
-                last_temp_stat = await get_instance(self.hass).async_add_executor_job(
-                    get_last_statistics,
-                    self.hass,
-                    1,
-                    temperature_statistic_id,
-                    True,  # noqa: FBT003
-                    set(),
-                )
-                last_temp_time = (
-                    last_temp_stat[temperature_statistic_id][0]["start"]  # pyright: ignore[reportTypedDictNotRequiredAccess]
-                    if last_temp_stat
-                    else None
-                )
-
                 daily_temps: dict[date, list[float]] = {}
                 for start, data in usage.items():
                     if data["temperature"] is None:
                         continue
                     daily_temps.setdefault(start.date(), []).append(data["temperature"])
 
+                # Every fetched day is restated, not only new ones: rows are keyed
+                # by day, so rewriting is idempotent, and it corrects days that
+                # were recorded before the mean was stored. The poll re-reads
+                # about 30 days, so this stays a few dozen rows.
                 temperature_statistics = []
                 for day, temps in sorted(daily_temps.items()):
                     stat_start = datetime.combine(day, time(12, 0), tzinfo=tz)
-                    if (
-                        last_temp_time is not None
-                        and stat_start.timestamp() <= last_temp_time
-                    ):
-                        continue
                     # An hourly meter carries a temperature per interval, so one
                     # day can hold 24 readings. Store their mean; taking a single
                     # reading records whichever interval happened to come first.
