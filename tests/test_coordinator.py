@@ -5,8 +5,11 @@ import asyncio
 import pytest
 
 from datetime import datetime, time, timedelta
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from zoneinfo import ZoneInfo
+
+from yarl import URL
 
 from freezegun.api import FrozenDateTimeFactory
 
@@ -198,6 +201,79 @@ async def test_unchanged_temperature_is_not_restated(
     ]
     assert temperature_inserts == []
     coordinator._on_unload()
+
+
+@pytest.mark.parametrize("invalid", [None, "", "unavailable", "nan", "inf", "-inf"])
+async def test_temperature_ignores_invalid_readings(
+    hass, mock_config_entry, mock_api_with_meters, stats_store, invalid
+):
+    """Only finite readings contribute to a day's mean; invalid-only days are omitted."""
+    coordinator = DukeEnergyCoordinator(hass, mock_api_with_meters, mock_config_entry)
+    day = datetime(2026, 7, 1, tzinfo=ZoneInfo("America/New_York"))
+    usage = {
+        day: {"energy": 1.0, "temperature": "60"},
+        day + timedelta(hours=1): {"energy": 1.0, "temperature": 80},
+        day + timedelta(hours=2): {"energy": 1.0, "temperature": invalid},
+        day + timedelta(days=1): {"energy": 1.0, "temperature": invalid},
+    }
+    await coordinator._async_update_temperature(usage, "src-1", day.tzinfo)
+    rows = stats_store.data["duke_energy:account_src-1_temperature"]
+    assert len(rows) == 1
+    assert rows[0]["mean"] == 70.0
+    assert rows[0]["start"] == day.replace(hour=12).timestamp()
+
+
+@pytest.mark.parametrize("endpoint", ["cycle", "summary", "billing"])
+@pytest.mark.parametrize("failure", [401, 403, 503, "blocked"])
+async def test_optional_endpoint_failures_preserve_ingestion_except_rejected_auth(
+    hass, mock_config_entry, mock_api_with_meters, stats_store, endpoint, failure
+):
+    """Optional data can fail independently, while rejected credentials still propagate."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        options={"cost_meters": {"123": {"mode": "static", "price": 0.2}}},
+    )
+    error = (
+        DukeEnergyBlockedError("Edge refused optional request")
+        if failure == "blocked"
+        else ClientResponseError(
+            SimpleNamespace(real_url=URL("https://example.test/optional")),
+            (),
+            status=failure,
+        )
+    )
+    if endpoint == "cycle":
+        dispatch = mock_api_with_meters.get_energy_usage.side_effect
+
+        def usage(*args, **kwargs):
+            if args[1] == "MONTHLY":
+                raise error
+            return dispatch(*args, **kwargs)
+
+        mock_api_with_meters.get_energy_usage.side_effect = usage
+    elif endpoint == "summary":
+        mock_api_with_meters.get_monthly_usage.side_effect = error
+    else:
+        mock_api_with_meters.get_billing_payment_info.side_effect = error
+
+    coordinator = DukeEnergyCoordinator(hass, mock_api_with_meters, mock_config_entry)
+    coordinator.monthly_usage["123"] = {"this_cycle": 42.0}
+    coordinator.billing_payment_info = {"acct-1": {"balance": 12.0}}
+    if failure == 401:
+        with pytest.raises(ConfigEntryAuthFailed):
+            await coordinator._async_update_data()
+        assert coordinator.status == STATUS_FAILED
+        return
+
+    await coordinator.async_refresh()
+    assert coordinator.last_update_success
+    assert "duke_energy:electric_123_energy_consumption" in stats_store.data
+    assert "duke_energy:electric_123_energy_cost" in stats_store.data
+    if endpoint == "summary":
+        assert coordinator.monthly_usage["123"] == {"this_cycle": 42.0}
+    elif endpoint == "billing":
+        assert coordinator.billing_payment_info == {"acct-1": {"balance": 12.0}}
 
 
 async def test_blocked_request_fails_poll_without_reauth(

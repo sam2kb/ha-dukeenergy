@@ -13,6 +13,9 @@ The 2.2.0 entry credits the features inherited from that base.
 - Treat a 401 from the usage endpoint as an authentication failure that starts reauthentication, and retry a 403. A rejected token previously looked like the end of Duke Energy's history, silently truncating the import while the cached token stayed rejected. A 403 is Duke's edge refusing the request rather than a verdict on the token, so it is retried instead of prompting sign-in.
 - Record the daily temperature as the mean of the day's readings, and rewrite a day's row only when its stored mean differs. Taking the first reading stored a midnight value under the noon timestamp, so the temperature history did not match the daily average; days recorded under the old value are corrected once, when they next fall inside the window.
 - Keep a cost backfill queued by an older version when the options form is saved without one, instead of clearing it.
+- Accept numeric temperature strings from Duke when calculating daily averages. Skip invalid or non-finite readings.
+- Keep importing usage and costs when optional billing or bill-cycle requests are blocked. Rejected credentials still start reauthentication.
+- Update setup and reauthentication guidance to use iPhone emulation, matching the README's sign-in steps.
 
 ## [2.3.8] - 2026-11-02
 

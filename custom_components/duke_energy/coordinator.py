@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 import logging
 from bisect import bisect_right
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, tzinfo
@@ -514,7 +514,7 @@ class DukeEnergyCoordinator(DataUpdateCoordinator[None]):
 
     async def _async_update_temperature(
         self,
-        usage: dict[datetime, dict[str, float | int]],
+        usage: Mapping[datetime, Mapping[str, float | int | str | None]],
         src_acct_id: str,
         tz: tzinfo,
     ) -> None:
@@ -530,9 +530,15 @@ class DukeEnergyCoordinator(DataUpdateCoordinator[None]):
 
         daily_temps: dict[date, list[float]] = {}
         for start, data in usage.items():
-            if data["temperature"] is None:
+            # The client preserves Duke's numeric strings. Invalid or missing
+            # temperatures must not interrupt consumption and cost ingestion.
+            try:
+                temperature = float(data["temperature"])
+            except (TypeError, ValueError):
                 continue
-            daily_temps.setdefault(start.date(), []).append(data["temperature"])
+            if not isfinite(temperature):
+                continue
+            daily_temps.setdefault(start.date(), []).append(temperature)
         if not daily_temps:
             return
 
@@ -679,6 +685,7 @@ class DukeEnergyCoordinator(DataUpdateCoordinator[None]):
         except (
             TimeoutError,
             ClientError,
+            UpdateFailed,
             IndexError,
             KeyError,
             TypeError,
@@ -736,7 +743,7 @@ class DukeEnergyCoordinator(DataUpdateCoordinator[None]):
                 summary = await self.api.get_monthly_usage(
                     serial_number, start_date=start_date
                 )
-        except (TimeoutError, ClientError) as err:
+        except (TimeoutError, ClientError, UpdateFailed) as err:
             _LOGGER.warning(
                 "Could not fetch the bill-cycle summary for meter %s: %s",
                 serial_number,
@@ -774,7 +781,7 @@ class DukeEnergyCoordinator(DataUpdateCoordinator[None]):
         try:
             with _translate_auth_errors():
                 info = await self.api.get_billing_payment_info(include_closed=True)
-        except (TimeoutError, ClientError) as err:
+        except (TimeoutError, ClientError, UpdateFailed) as err:
             _LOGGER.warning("Could not fetch billing and payment info: %s", err)
             return
 

@@ -2,7 +2,8 @@
 
 import asyncio
 from datetime import datetime
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
+from zoneinfo import ZoneInfo
 
 import pytest
 from aiohttp import ClientResponseError
@@ -12,8 +13,11 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import (
 )
 from yarl import URL
 
+from homeassistant.components.recorder.statistics import statistics_during_period
+
 from custom_components.duke_energy import DukeEnergy
 from custom_components.duke_energy.api import DukeEnergyAuth
+from custom_components.duke_energy.coordinator import DukeEnergyCoordinator
 
 from .conftest import _make_id_token
 
@@ -73,6 +77,70 @@ async def api_transport(monkeypatch):
             json={"message": "Invalid key=value pair in Authorization header"},
         )
         yield DukeEnergy(auth), transport
+
+
+@pytest.mark.parametrize(
+    "service,interval,period,series",
+    [("ELECTRIC", "HOURLY", "DAY", "12 AM"), ("GAS", "DAILY", "WEEK", "10/27/2026")],
+)
+async def test_client_temperature_strings_reach_native_recorder(
+    recorder_mock,
+    api_transport,
+    hass,
+    mock_config_entry,
+    mock_api_with_meters,
+    coordinator_cleanup,
+    service,
+    interval,
+    period,
+    series,
+):
+    """Real client output records numeric temperature and permits cost ingestion."""
+    client, transport = api_transport
+    transport.get(BASE + "/account/list", json=account_payload())
+    transport.get(BASE + "/account-details-v2", json=meter_details(service))
+    transport.post(
+        BASE + "/account/usage/graph",
+        json={
+            "usageArray": [{"date": series, "usage": "1.25", "temperatureAvg": "70"}]
+        },
+    )
+    await client.get_meters()
+    start = datetime(2026, 10, 27, tzinfo=ZoneInfo("America/New_York"))
+    result = await client.get_energy_usage("meter-1", interval, period, start, start)
+    assert next(iter(result["data"].values()))["temperature"] == "70"
+
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        options={"cost_meters": {"123": {"mode": "static", "price": 0.2}}},
+    )
+    meter = mock_api_with_meters.get_meters.return_value["123"]
+    meter["serviceType"] = service
+    meter["account"]["srcAcctId"] = "account1"
+    coordinator = DukeEnergyCoordinator(hass, mock_api_with_meters, mock_config_entry)
+    with patch.object(
+        coordinator, "_async_get_energy_usage", return_value=(result["data"], interval)
+    ):
+        await coordinator.async_refresh()
+        await hass.async_block_till_done(wait_background_tasks=True)
+    assert coordinator.last_update_success
+
+    temperature_id = "duke_energy:account_account1_temperature"
+    cost_id = f"duke_energy:{service.lower()}_123_energy_cost"
+    rows = await recorder_mock.async_add_executor_job(
+        statistics_during_period,
+        hass,
+        start,
+        None,
+        {temperature_id, cost_id},
+        "hour",
+        None,
+        {"mean", "sum"},
+    )
+    assert rows[temperature_id][0]["mean"] == 70.0
+    assert rows[temperature_id][0]["start"] == start.replace(hour=12).timestamp()
+    assert rows[cost_id][0]["sum"] == pytest.approx(0.25)
 
 
 @pytest.mark.parametrize(

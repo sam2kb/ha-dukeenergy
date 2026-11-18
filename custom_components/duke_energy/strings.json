@@ -20,14 +20,14 @@
       "default": "[%key:common::config_flow::create_entry::authenticated%]"
     },
     "error": {
-      "authorize_rejected": "Duke Energy rejected the sign-in before issuing a code, which means the login page still saw a desktop browser. Set the mobile User-Agent from step 1, then start a fresh sign-in.",
+      "authorize_rejected": "Duke Energy rejected the sign-in before issuing a code. Turn on iPhone emulation, then reopen the sign-in link from this form and try again.",
       "invalid_callback_url": "That address is not a Duke Energy callback URL. Copy the entire address from the address bar after signing in, including everything after the '?'.",
       "state_mismatch": "That URL belongs to a different sign-in attempt. Open the sign-in link above again and paste the new address."
     },
     "step": {
       "auth": {
         "title": "Authorize with Duke Energy",
-        "description": "1. Change your browser's User-Agent to the iPhone value below.\n2. [Open Duke Energy sign-in]({authorize_url}) and log in.\n3. When Duke redirects or opens a tab, copy the entire address from that tab's address bar.\n4. Paste the address into **Callback URL** below and submit.\n\nKeep this setup form open until you submit the URL.\n\nHome Assistant then imports up to three years of usage. This can take a minute or two; leave the integration in place while it initializes.\n\niPhone User-Agent:\n`{user_agent}`",
+        "description": "1. Turn on iPhone emulation before opening the sign-in link. Use an iPhone preset in Chrome's device toolbar or Firefox's Responsive Design Mode. Changing only the User-Agent is not enough in Chrome because it also reports its platform through client hints.\n2. [Open Duke Energy sign-in]({authorize_url}) and sign in. Stay in that tab. Use this link, not the public Duke Energy website.\n3. Copy the entire address after Duke redirects. It starts with `https://login.duke-energy.com/ios/com.duke-energy.app/callback` and contains a `code` parameter.\n4. Paste the address into **Callback URL** below and submit.\n\nKeep this setup form open until you submit the URL. Treat the callback URL as a sign-in credential; keep it out of issue reports and screenshots. Turn off device emulation when you are done.\n\nHome Assistant then imports up to three years of usage. This can take a minute or two; leave the integration in place while it initializes.\n\niPhone User-Agent, if your emulation mode or extension asks for one:\n`{user_agent}`",
         "data": {
           "callback_url": "Callback URL"
         },
