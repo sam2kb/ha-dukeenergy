@@ -128,6 +128,35 @@ async def test_update(
     assert incremental_stats == []
 
 
+async def test_daily_temperature_is_the_mean_of_the_days_readings(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_api_with_meters: AsyncMock,
+    stats_store: StatsStore,
+) -> None:
+    """A day with several readings stores their mean, not the first one."""
+    mock_config_entry.add_to_hass(hass)
+    coordinator = DukeEnergyCoordinator(hass, mock_api_with_meters, mock_config_entry)
+    tz = ZoneInfo("America/New_York")
+    day = datetime(2026, 7, 1, tzinfo=tz)
+    mock_api_with_meters.get_energy_usage.return_value = {
+        "data": {
+            day.replace(hour=0): {"energy": 1.0, "temperature": 60},
+            day.replace(hour=12): {"energy": 1.0, "temperature": 65},
+            day.replace(hour=23): {"energy": 1.0, "temperature": 80},
+        },
+        "missing": [],
+    }
+
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    _, statistics = _call_for(stats_store, "duke_energy:account_src-1_temperature")
+    assert len(statistics) == 1
+    assert statistics[0]["start"] == datetime(2026, 7, 1, 12, tzinfo=tz)
+    assert statistics[0]["mean"] == pytest.approx((60 + 65 + 80) / 3)
+
+
 async def test_blocked_request_fails_poll_without_reauth(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,

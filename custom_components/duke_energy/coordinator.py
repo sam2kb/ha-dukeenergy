@@ -470,7 +470,7 @@ class DukeEnergyCoordinator(DataUpdateCoordinator[None]):
                     else None
                 )
 
-                daily_temps: dict[date, list] = {}
+                daily_temps: dict[date, list[float]] = {}
                 for start, data in usage.items():
                     if data["temperature"] is None:
                         continue
@@ -484,8 +484,11 @@ class DukeEnergyCoordinator(DataUpdateCoordinator[None]):
                         and stat_start.timestamp() <= last_temp_time
                     ):
                         continue
+                    # An hourly meter carries a temperature per interval, so one
+                    # day can hold 24 readings. Store their mean; taking a single
+                    # reading records whichever interval happened to come first.
                     temperature_statistics.append(
-                        StatisticData(start=stat_start, mean=temps[0])
+                        StatisticData(start=stat_start, mean=sum(temps) / len(temps))
                     )
 
                 temperature_metadata = StatisticMetaData(

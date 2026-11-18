@@ -41,7 +41,7 @@ External PyPI dependency (import name `aiodukeenergy_co`; dev source at `../aiod
 
 - Electric meters: hourly intervals, `UnitOfEnergy.KILO_WATT_HOUR`, `StatisticMeanType.NONE`, has_sum=True.
 - Gas meters: daily intervals, `UnitOfVolume.CENTUM_CUBIC_FEET`, `StatisticMeanType.NONE`, has_sum=True.
-- Temperature: daily (noon), `UnitOfTemperature.FAHRENHEIT`, `StatisticMeanType.ARITHMETIC`, has_sum=False. One temperature stat per account (not per meter), registered only for the first meter seen for each `accountNumber`.
+- Temperature: daily mean of the day's readings, registered at noon, `UnitOfTemperature.FAHRENHEIT`, `StatisticMeanType.ARITHMETIC`, has_sum=False. One temperature stat per account (not per meter), registered only for the first meter seen for each `accountNumber`.
 - Daily consumption stats are registered at noon (start + 12h) to better represent when usage occurred.
 
 ## Development
