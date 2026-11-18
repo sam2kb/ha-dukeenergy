@@ -758,6 +758,21 @@ async def test_history_boundary_in_later_batch_keeps_newer_data(
     assert mock_api_with_meters.get_energy_usage.await_count == 6
 
 
+@pytest.mark.parametrize("status", [401, 403])
+async def test_history_auth_failure_reauths_instead_of_truncating(
+    hass, mock_config_entry, mock_api_with_meters, status
+):
+    """A rejected token is an auth failure, not the end of Duke's history."""
+    coordinator = DukeEnergyCoordinator(hass, mock_api_with_meters, mock_config_entry)
+    mock_api_with_meters.get_energy_usage.side_effect = ClientResponseError(
+        None, (), status=status
+    )
+    with pytest.raises(ConfigEntryAuthFailed):
+        await coordinator._async_get_energy_usage(
+            mock_api_with_meters.get_meters.return_value["123"]
+        )
+
+
 @pytest.mark.parametrize("status", [400, 404])
 async def test_existing_history_boundary_response_keeps_available_data(
     hass, mock_config_entry, mock_api_with_meters, status

@@ -79,6 +79,10 @@ _CYCLE_START_MAX_AGE_DAYS = 28
 # history request bursts small.
 _MAX_CONCURRENT_REQUESTS = 3
 
+# A rejected token must start reauthentication; it is never evidence that the
+# history horizon was reached.
+_AUTH_FAILURE_STATUSES = frozenset({HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN})
+
 type DukeEnergyConfigEntry = ConfigEntry[DukeEnergyCoordinator]
 
 
@@ -1254,6 +1258,11 @@ class DukeEnergyCoordinator(DataUpdateCoordinator[None]):
                     end_step,
                 )
         except ClientResponseError as err:
+            if err.status in _AUTH_FAILURE_STATUSES:
+                # Without this a rejected token looks like the end of Duke's
+                # history: the walk truncates, the cached Duke token stays
+                # rejected, and no reauthentication is ever offered.
+                raise ConfigEntryAuthFailed from err
             if (
                 HTTPStatus.BAD_REQUEST <= err.status < HTTPStatus.INTERNAL_SERVER_ERROR
                 and err.status
