@@ -80,6 +80,6 @@ Key mocking notes:
 ## Key constraints
 
 - All service areas are `America/New_York`. If Duke Energy ever expands, timezone detection by service address would be needed.
-- Duke Energy hourly data is available up to ~3 years back; `_async_get_energy_usage` fetches in 30-day windows walking backward.
-- A `ClientError` from the API during pagination is treated as "no more data" (normal termination), not an error.
+- Duke Energy hourly data is available up to ~3 years back; `_async_get_energy_usage` fetches in 30-day windows walking backward, three at a time (`_MAX_CONCURRENT_REQUESTS`).
+- A `ClientError` from the API during pagination is treated as "no more data" (normal termination), not an error. A 401/403 is the exception: it raises `ConfigEntryAuthFailed` so a rejected token starts reauthentication instead of truncating the history.
 - Config entry version is 2 (version 1 entries trigger reauth via `async_migrate_entry`).

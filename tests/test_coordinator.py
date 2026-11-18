@@ -1,5 +1,7 @@
 """Tests for the Duke Energy coordinator."""
 
+import asyncio
+
 import pytest
 
 from datetime import datetime, timedelta
@@ -651,10 +653,12 @@ async def test_history_transient_failure_does_not_return_partial_success(
     mock_api_with_meters.get_energy_usage.side_effect = [
         {"data": {}, "missing": []},
         failure,
+        {"data": {}, "missing": []},
     ]
     with pytest.raises(UpdateFailed):
         await coordinator._async_get_energy_usage(meter)
-    assert mock_api_with_meters.get_energy_usage.await_count == 2
+    # The failure is in the first batch, so no later batch is requested.
+    assert mock_api_with_meters.get_energy_usage.await_count == 3
 
 
 async def test_native_shutdown_cancels_custom_poll_and_does_not_rearm(
@@ -697,6 +701,76 @@ async def test_consumption_resumes_when_api_window_no_longer_overlaps_recorder(
     _, rows = _call_for(stats_store, statistic_id)
     assert len(rows) == 1
     assert rows[0]["sum"] == pytest.approx(101.3)
+
+
+async def test_history_ranges_are_fetched_concurrently_in_batches(
+    hass, mock_config_entry, mock_api_with_meters
+):
+    """At most three history requests are in flight at once."""
+    coordinator = DukeEnergyCoordinator(hass, mock_api_with_meters, mock_config_entry)
+    sample = mock_api_with_meters.get_energy_usage.return_value
+    in_flight = 0
+    max_in_flight = 0
+
+    async def get_energy_usage(*_args):
+        nonlocal in_flight, max_in_flight
+        in_flight += 1
+        max_in_flight = max(max_in_flight, in_flight)
+        await asyncio.sleep(0)
+        in_flight -= 1
+        return sample
+
+    mock_api_with_meters.get_energy_usage.side_effect = get_energy_usage
+    usage, _ = await coordinator._async_get_energy_usage(
+        mock_api_with_meters.get_meters.return_value["123"]
+    )
+    assert usage == sample["data"]
+    # 3 years of data in 30-day windows (ceil(3*365/30) == 37).
+    assert mock_api_with_meters.get_energy_usage.await_count == 37
+    assert max_in_flight == 3
+
+
+async def test_history_boundary_in_later_batch_keeps_newer_data(
+    hass, mock_config_entry, mock_api_with_meters
+):
+    """Ranges after the boundary are ignored and no further batch is requested."""
+    coordinator = DukeEnergyCoordinator(hass, mock_api_with_meters, mock_config_entry)
+    reading = next(iter(mock_api_with_meters.get_energy_usage.return_value["data"]))
+
+    def window(days: int) -> dict:
+        return {
+            "data": {reading - timedelta(days=days): {"energy": 1.0}},
+            "missing": [],
+        }
+
+    mock_api_with_meters.get_energy_usage.side_effect = [
+        window(0),
+        window(30),
+        window(60),
+        window(90),
+        ClientResponseError(None, (), status=404),
+        window(150),
+    ]
+    usage, _ = await coordinator._async_get_energy_usage(
+        mock_api_with_meters.get_meters.return_value["123"]
+    )
+    assert set(usage) == {reading - timedelta(days=d) for d in (0, 30, 60, 90)}
+    assert mock_api_with_meters.get_energy_usage.await_count == 6
+
+
+@pytest.mark.parametrize("status", [401, 403])
+async def test_history_auth_failure_reauths_instead_of_truncating(
+    hass, mock_config_entry, mock_api_with_meters, status
+):
+    """A rejected token is an auth failure, not the end of Duke's history."""
+    coordinator = DukeEnergyCoordinator(hass, mock_api_with_meters, mock_config_entry)
+    mock_api_with_meters.get_energy_usage.side_effect = ClientResponseError(
+        None, (), status=status
+    )
+    with pytest.raises(ConfigEntryAuthFailed):
+        await coordinator._async_get_energy_usage(
+            mock_api_with_meters.get_meters.return_value["123"]
+        )
 
 
 @pytest.mark.parametrize("status", [400, 404])

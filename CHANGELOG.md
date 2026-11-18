@@ -9,6 +9,9 @@ The 2.2.0 entry credits the features inherited from that base.
 
 ## [Unreleased]
 
+- Fetch usage history in batches of three concurrent 30-day requests instead of one at a time, cutting first-load time by about two thirds. Keep the existing handling of history boundaries and failed requests. Adapted from [hunterjm/ha-dukeenergy#63](https://github.com/hunterjm/ha-dukeenergy/pull/63).
+- Treat a 401 or 403 from the usage endpoint as an authentication failure that starts reauthentication. A rejected token previously looked like the end of Duke Energy's history, silently truncating the import while the cached token stayed rejected.
+
 ## [2.3.8] - 2026-11-02
 
 - Fix the deprecated device-link warning by linking meter devices to their account using the registry's `via_device_id`. Keep existing device and entity IDs.

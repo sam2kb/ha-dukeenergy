@@ -75,6 +75,14 @@ _OFFSET_WINDOW = timedelta(hours=2)
 # across two cycles.
 _CYCLE_START_MAX_AGE_DAYS = 28
 
+# Duke's edge blocks clients that don't look like the mobile app, so keep
+# history request bursts small.
+_MAX_CONCURRENT_REQUESTS = 3
+
+# A rejected token must start reauthentication; it is never evidence that the
+# history horizon was reached.
+_AUTH_FAILURE_STATUSES = frozenset({HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN})
+
 type DukeEnergyConfigEntry = ConfigEntry[DukeEnergyCoordinator]
 
 
@@ -1179,56 +1187,97 @@ class DukeEnergyCoordinator(DataUpdateCoordinator[None]):
             run_interval = "HOURLY"
             run_period = "DAY"
 
+        # Ranges are ordered newest first
+        ranges: list[tuple[datetime, datetime]] = []
         start_step = max(end - lookback, start)
         end_step = end
-        usage: dict[datetime, dict[str, float | int]] = {}
         while True:
-            _LOGGER.debug(
-                "Getting %s %s usage: %s - %s",
-                meter["serviceType"].lower().capitalize(),
-                run_interval.lower(),
-                start_step,
-                end_step,
-            )
-            try:
-                # Get data
-                with _translate_auth_errors():
-                    results = await self.api.get_energy_usage(
-                        meter["serialNum"],
-                        run_interval,
-                        run_period,
-                        start_step,
-                        end_step,
+            ranges.append((start_step, end_step))
+
+            # Set next range
+            end_step = start_step - one
+            start_step = max(start_step - lookback, start)
+
+            # Make sure we don't go back too far
+            if end_step < start:
+                break
+
+        # Fetch in small batches so reaching the history boundary wastes at
+        # most a batch's worth of requests.
+        usage: dict[datetime, dict[str, float | int]] = {}
+        reached_boundary = False
+        for index in range(0, len(ranges), _MAX_CONCURRENT_REQUESTS):
+            results = await asyncio.gather(
+                *(
+                    self._async_get_usage_range(
+                        meter, run_interval, run_period, range_start, range_end
                     )
-
-                usage = {**results["data"], **usage}
-
-                for missing in results["missing"]:
-                    _LOGGER.debug("Missing data: %s", missing)
-
-                # Set next range
-                end_step = start_step - one
-                start_step = max(start_step - lookback, start)
-
-                # Make sure we don't go back too far
-                if end_step < start:
+                    for range_start, range_end in ranges[
+                        index : index + _MAX_CONCURRENT_REQUESTS
+                    ]
+                ),
+                return_exceptions=True,
+            )
+            # Results past the boundary are ignored, as if never requested.
+            for result in results:
+                if isinstance(result, BaseException):
+                    raise result
+                if result is None:
+                    reached_boundary = True
                     break
-            except ClientResponseError as err:
-                if (
-                    HTTPStatus.BAD_REQUEST
-                    <= err.status
-                    < HTTPStatus.INTERNAL_SERVER_ERROR
-                    and err.status
-                    not in (HTTPStatus.REQUEST_TIMEOUT, HTTPStatus.TOO_MANY_REQUESTS)
-                ):
-                    # Preserve the existing boundary response handling. A
-                    # temporary outage is not evidence of the history horizon.
-                    break
-                msg = "Duke Energy history request failed; retry required"
-                raise UpdateFailed(msg) from err
-            except (TimeoutError, ClientError) as err:
-                msg = "Duke Energy history request failed; retry required"
-                raise UpdateFailed(msg) from err
+                usage = {**result, **usage}
+            if reached_boundary:
+                break
 
         _LOGGER.debug("Got %s meter usage reads", len(usage))
         return usage, run_interval
+
+    async def _async_get_usage_range(
+        self,
+        meter: dict[str, Any],
+        run_interval: str,
+        run_period: str,
+        start_step: datetime,
+        end_step: datetime,
+    ) -> dict[datetime, dict[str, float | int]] | None:
+        """Get one range of usage, or None past the start of Duke's history."""
+        _LOGGER.debug(
+            "Getting %s %s usage: %s - %s",
+            meter["serviceType"].lower().capitalize(),
+            run_interval.lower(),
+            start_step,
+            end_step,
+        )
+        try:
+            with _translate_auth_errors():
+                results = await self.api.get_energy_usage(
+                    meter["serialNum"],
+                    run_interval,
+                    run_period,
+                    start_step,
+                    end_step,
+                )
+        except ClientResponseError as err:
+            if err.status in _AUTH_FAILURE_STATUSES:
+                # Without this a rejected token looks like the end of Duke's
+                # history: the walk truncates, the cached Duke token stays
+                # rejected, and no reauthentication is ever offered.
+                raise ConfigEntryAuthFailed from err
+            if (
+                HTTPStatus.BAD_REQUEST <= err.status < HTTPStatus.INTERNAL_SERVER_ERROR
+                and err.status
+                not in (HTTPStatus.REQUEST_TIMEOUT, HTTPStatus.TOO_MANY_REQUESTS)
+            ):
+                # Preserve the existing boundary response handling. A
+                # temporary outage is not evidence of the history horizon.
+                return None
+            msg = "Duke Energy history request failed; retry required"
+            raise UpdateFailed(msg) from err
+        except (TimeoutError, ClientError) as err:
+            msg = "Duke Energy history request failed; retry required"
+            raise UpdateFailed(msg) from err
+
+        for missing in results["missing"]:
+            _LOGGER.debug("Missing data: %s", missing)
+
+        return results["data"]
