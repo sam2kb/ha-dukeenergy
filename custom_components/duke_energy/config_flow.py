@@ -33,7 +33,7 @@ from homeassistant.helpers.selector import (
 )
 from yarl import URL
 
-from .const import DOMAIN, IOS_USER_AGENT
+from .const import DOMAIN, IOS_USER_AGENT, MOBILE_REDIRECT_URI
 from .coordinator import _SUPPORTED_METER_TYPES, DukeEnergyConfigEntry
 from .oauth import DukeEnergyOAuth2Implementation
 
@@ -165,6 +165,7 @@ class DukeEnergyOAuth2FlowHandler(
             data_schema=STEP_AUTH_SCHEMA,
             description_placeholders={
                 "authorize_url": self._authorize_url,
+                "callback_prefix": MOBILE_REDIRECT_URI,
                 "user_agent": IOS_USER_AGENT,
             },
             errors=errors,
