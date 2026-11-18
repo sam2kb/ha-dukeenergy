@@ -81,7 +81,11 @@ _MAX_CONCURRENT_REQUESTS = 3
 
 # A rejected token must start reauthentication; it is never evidence that the
 # history horizon was reached.
-_AUTH_FAILURE_STATUSES = frozenset({HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN})
+_AUTH_FAILURE_STATUSES = frozenset({HTTPStatus.UNAUTHORIZED})
+
+# Duke's edge answers 403 for requests it refuses before they reach the API.
+# That says nothing about the token, so retry instead of prompting sign-in.
+_BLOCKED_STATUSES = frozenset({HTTPStatus.FORBIDDEN})
 
 type DukeEnergyConfigEntry = ConfigEntry[DukeEnergyCoordinator]
 
@@ -97,11 +101,11 @@ class MeterInfo:
 @contextmanager
 def _translate_auth_errors() -> Iterator[None]:
     """
-    Translate library auth errors for the coordinator.
+    Translate library and HTTP auth errors for the coordinator.
 
-    A rejected token is an auth failure and triggers reauth. A request the
-    CDN refused before it reached Duke's API is not — so it is reported as
-    a failed poll and retried on the next schedule.
+    A rejected token is an auth failure and triggers reauth, whichever call
+    raised it. A request the CDN refused before it reached Duke's API is not,
+    so it is reported as a failed poll and retried on the next schedule.
     """
     try:
         yield
@@ -110,6 +114,13 @@ def _translate_auth_errors() -> Iterator[None]:
         raise UpdateFailed(msg) from err
     except DukeEnergyAuthError as err:
         raise ConfigEntryAuthFailed from err
+    except ClientResponseError as err:
+        if err.status in _AUTH_FAILURE_STATUSES:
+            raise ConfigEntryAuthFailed from err
+        if err.status in _BLOCKED_STATUSES:
+            msg = f"Duke Energy refused the request: HTTP {err.status}"
+            raise UpdateFailed(msg) from err
+        raise
 
 
 def _summary_value(summary: dict[str, Any], period: str, key: str) -> float | None:
@@ -1246,11 +1257,6 @@ class DukeEnergyCoordinator(DataUpdateCoordinator[None]):
                     end_step,
                 )
         except ClientResponseError as err:
-            if err.status in _AUTH_FAILURE_STATUSES:
-                # Without this a rejected token looks like the end of Duke's
-                # history: the walk truncates, the cached Duke token stays
-                # rejected, and no reauthentication is ever offered.
-                raise ConfigEntryAuthFailed from err
             if (
                 HTTPStatus.BAD_REQUEST <= err.status < HTTPStatus.INTERNAL_SERVER_ERROR
                 and err.status

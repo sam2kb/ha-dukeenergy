@@ -209,6 +209,26 @@ async def test_auth_error_starts_reauth(
     )
 
 
+async def test_http_auth_failure_on_meters_starts_reauth(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_api_with_meters: AsyncMock,
+) -> None:
+    """A 401 on the first call of a poll is an auth failure, not a generic one."""
+    mock_config_entry.add_to_hass(hass)
+    mock_api_with_meters.get_meters.side_effect = ClientResponseError(
+        None, (), status=401
+    )
+    coordinator = DukeEnergyCoordinator(hass, mock_api_with_meters, mock_config_entry)
+
+    # Asserted here rather than through async_refresh: HA formats the exception
+    # while logging it, and a ClientResponseError built without request info
+    # cannot be stringified.
+    with pytest.raises(ConfigEntryAuthFailed):
+        await coordinator._async_update_data()
+    assert coordinator.status == STATUS_FAILED
+
+
 async def test_gas_meter_update(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,
@@ -792,16 +812,29 @@ async def test_history_boundary_in_later_batch_keeps_newer_data(
     assert mock_api_with_meters.get_energy_usage.await_count == 6
 
 
-@pytest.mark.parametrize("status", [401, 403])
 async def test_history_auth_failure_reauths_instead_of_truncating(
-    hass, mock_config_entry, mock_api_with_meters, status
+    hass, mock_config_entry, mock_api_with_meters
 ):
     """A rejected token is an auth failure, not the end of Duke's history."""
     coordinator = DukeEnergyCoordinator(hass, mock_api_with_meters, mock_config_entry)
     mock_api_with_meters.get_energy_usage.side_effect = ClientResponseError(
-        None, (), status=status
+        None, (), status=401
     )
     with pytest.raises(ConfigEntryAuthFailed):
+        await coordinator._async_get_energy_usage(
+            mock_api_with_meters.get_meters.return_value["123"]
+        )
+
+
+async def test_history_forbidden_is_retried_not_reauth(
+    hass, mock_config_entry, mock_api_with_meters
+):
+    """A 403 is the edge refusing the request, so retry instead of prompting sign-in."""
+    coordinator = DukeEnergyCoordinator(hass, mock_api_with_meters, mock_config_entry)
+    mock_api_with_meters.get_energy_usage.side_effect = ClientResponseError(
+        None, (), status=403
+    )
+    with pytest.raises(UpdateFailed):
         await coordinator._async_get_energy_usage(
             mock_api_with_meters.get_meters.return_value["123"]
         )
