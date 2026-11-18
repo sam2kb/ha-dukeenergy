@@ -16,6 +16,14 @@ from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 
+@pytest.fixture(autouse=True)
+def _no_batch_interval(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Skip the pause between history batches so tests do not wait."""
+    monkeypatch.setattr(
+        "custom_components.duke_energy.coordinator._BATCH_INTERVAL_SECONDS", 0
+    )
+
+
 def _make_id_token(
     user_id: str = "test-user-id",
     email: str = "test@example.com",

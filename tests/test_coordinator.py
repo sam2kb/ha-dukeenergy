@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from unittest.mock import AsyncMock, patch
 from zoneinfo import ZoneInfo
 
@@ -19,6 +19,7 @@ from homeassistant.const import UnitOfEnergy, UnitOfVolume
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import UpdateFailed
+from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_conversion import EnergyConverter
 
 from pytest_homeassistant_custom_component.common import (
@@ -161,6 +162,41 @@ async def test_daily_temperature_is_the_mean_of_the_days_readings(
     assert statistics[0]["start"] == datetime(2026, 7, 1, 12, tzinfo=tz)
     assert statistics[0]["mean"] == pytest.approx((60 + 65 + 80) / 3)
     # The poll schedules the next check; cancel it before teardown.
+    coordinator._on_unload()
+
+
+async def test_unchanged_temperature_is_not_restated(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_api_with_meters: AsyncMock,
+    stats_store: StatsStore,
+) -> None:
+    """A day whose stored mean already matches is not written again."""
+    mock_config_entry.add_to_hass(hass)
+    coordinator = DukeEnergyCoordinator(hass, mock_api_with_meters, mock_config_entry)
+    tz = ZoneInfo("America/New_York")
+    day = datetime(2026, 7, 1, tzinfo=tz)
+    mock_api_with_meters.get_energy_usage.return_value = {
+        "data": {
+            day.replace(hour=0): {"energy": 1.0, "temperature": 60},
+            day.replace(hour=12): {"energy": 1.0, "temperature": 80},
+        },
+        "missing": [],
+    }
+    stats_store.seed(
+        "duke_energy:account_src-1_temperature",
+        [{"start": datetime(2026, 7, 1, 12, tzinfo=tz), "mean": 70}],
+    )
+
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    temperature_inserts = [
+        call
+        for call in stats_store.mock_add.call_args_list
+        if call.args[1]["statistic_id"] == "duke_energy:account_src-1_temperature"
+    ]
+    assert temperature_inserts == []
     coordinator._on_unload()
 
 
@@ -732,6 +768,24 @@ async def test_native_shutdown_cancels_custom_poll_and_does_not_rearm(
         assert coordinator._unsub_scheduled is None
         coordinator._schedule_next_check(zone, had_success=False)
         assert coordinator._unsub_scheduled is None
+    finally:
+        coordinator._on_unload()
+
+
+async def test_successful_poll_schedules_tomorrows_first_slot(
+    hass, mock_config_entry, mock_api_with_meters
+):
+    """A successful poll waits for tomorrow instead of retrying later today."""
+    coordinator = DukeEnergyCoordinator(hass, mock_api_with_meters, mock_config_entry)
+    tz = ZoneInfo("America/New_York")
+    tomorrow = dt_util.now(tz).date() + timedelta(days=1)
+
+    coordinator._schedule_next_check(tz, had_success=True)
+    try:
+        expected = datetime.combine(
+            tomorrow, time(9, 0), tzinfo=tz
+        ) + coordinator._get_or_create_daily_offset(tomorrow)
+        assert coordinator.next_poll_time == expected
     finally:
         coordinator._on_unload()
 

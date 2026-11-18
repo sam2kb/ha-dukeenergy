@@ -79,6 +79,12 @@ _CYCLE_START_MAX_AGE_DAYS = 28
 # history request bursts small.
 _MAX_CONCURRENT_REQUESTS = 3
 
+# Pause between bursts. Three requests finish in a fraction of a second, so
+# back-to-back bursts would triple the request rate the sequential walk used.
+# Half a second per gap keeps the average near that old rate; an incremental
+# poll sends a single batch and never waits.
+_BATCH_INTERVAL_SECONDS = 0.5
+
 # A rejected token must start reauthentication; it is never evidence that the
 # history horizon was reached.
 _AUTH_FAILURE_STATUSES = frozenset({HTTPStatus.UNAUTHORIZED})
@@ -267,7 +273,7 @@ class DukeEnergyCoordinator(DataUpdateCoordinator[None]):
 
     def _schedule_next_check(self, tz: tzinfo, *, had_success: bool) -> None:
         """
-        Schedule the next data check near 7am, 2pm, or 7pm ET.
+        Schedule the next data check near 9am, 2pm, or 7pm ET.
 
         Applies a per-user per-day offset of up to ±2 hours.
         """
@@ -460,55 +466,9 @@ class DukeEnergyCoordinator(DataUpdateCoordinator[None]):
 
                 # Temperature statistic (first meter per account only)
                 account_number = meter["account"]["accountNumber"]
-                if account_number in temp_accounts_seen:
-                    continue
-                temp_accounts_seen.add(account_number)
-
-                temperature_statistic_id = f"{DOMAIN}:account_{src_acct_id}_temperature"
-                self._statistic_ids.add(temperature_statistic_id)
-
-                daily_temps: dict[date, list[float]] = {}
-                for start, data in usage.items():
-                    if data["temperature"] is None:
-                        continue
-                    daily_temps.setdefault(start.date(), []).append(data["temperature"])
-
-                # Every fetched day is restated, not only new ones: rows are keyed
-                # by day, so rewriting is idempotent, and it corrects days that
-                # were recorded before the mean was stored. The poll re-reads
-                # about 30 days, so this stays a few dozen rows.
-                temperature_statistics = []
-                for day, temps in sorted(daily_temps.items()):
-                    stat_start = datetime.combine(day, time(12, 0), tzinfo=tz)
-                    # An hourly meter carries a temperature per interval, so one
-                    # day can hold 24 readings. Store their mean; taking a single
-                    # reading records whichever interval happened to come first.
-                    temperature_statistics.append(
-                        StatisticData(start=stat_start, mean=sum(temps) / len(temps))
-                    )
-
-                temperature_metadata = StatisticMetaData(
-                    mean_type=StatisticMeanType.ARITHMETIC,
-                    has_sum=False,
-                    name=f"Duke Energy Account {src_acct_id} Temperature",
-                    source=DOMAIN,
-                    statistic_id=temperature_statistic_id,
-                    unit_class="temperature",
-                    unit_of_measurement=UnitOfTemperature.FAHRENHEIT,
-                )
-
-                _LOGGER.debug(
-                    "Adding %s statistics for %s",
-                    len(temperature_statistics),
-                    temperature_statistic_id,
-                )
-                async_add_external_statistics(
-                    self.hass, temperature_metadata, temperature_statistics
-                )
-                if temperature_statistics:
-                    self._stats_queued = True
-
-                # --- End temperature statistic addition
+                if account_number not in temp_accounts_seen:
+                    temp_accounts_seen.add(account_number)
+                    await self._async_update_temperature(usage, src_acct_id, tz)
 
             if self.account_info:
                 await self._async_update_billing_payment_info()
@@ -551,6 +511,69 @@ class DukeEnergyCoordinator(DataUpdateCoordinator[None]):
                     "will retry at next scheduled time"
                 )
             self._schedule_next_check(tz, had_success=had_success)
+
+    async def _async_update_temperature(
+        self,
+        usage: dict[datetime, dict[str, float | int]],
+        src_acct_id: str,
+        tz: tzinfo,
+    ) -> None:
+        """
+        Write the account's daily temperature mean, where it has changed.
+
+        Rows are keyed by day, so only days whose stored mean differs are
+        written. A steady poll writes nothing, while a day recorded before the
+        mean was stored still gets corrected once.
+        """
+        statistic_id = f"{DOMAIN}:account_{src_acct_id}_temperature"
+        self._statistic_ids.add(statistic_id)
+
+        daily_temps: dict[date, list[float]] = {}
+        for start, data in usage.items():
+            if data["temperature"] is None:
+                continue
+            daily_temps.setdefault(start.date(), []).append(data["temperature"])
+        if not daily_temps:
+            return
+
+        stored = await get_instance(self.hass).async_add_executor_job(
+            statistics_during_period,
+            self.hass,
+            datetime.combine(min(daily_temps), time(12, 0), tzinfo=tz),
+            None,
+            {statistic_id},
+            "hour",
+            None,
+            {"mean"},
+        )
+        stored_means = {
+            row["start"]: row["mean"] for row in stored.get(statistic_id, [])
+        }
+
+        # An hourly meter carries a temperature per interval, so one day can
+        # hold 24 readings; store their mean rather than one reading, which
+        # would record whichever interval happened to come first.
+        statistics = []
+        for day, temps in sorted(daily_temps.items()):
+            stat_start = datetime.combine(day, time(12, 0), tzinfo=tz)
+            mean = sum(temps) / len(temps)
+            if stored_means.get(stat_start.timestamp()) != mean:
+                statistics.append(StatisticData(start=stat_start, mean=mean))
+        if not statistics:
+            return
+
+        metadata = StatisticMetaData(
+            mean_type=StatisticMeanType.ARITHMETIC,
+            has_sum=False,
+            name=f"Duke Energy Account {src_acct_id} Temperature",
+            source=DOMAIN,
+            statistic_id=statistic_id,
+            unit_class="temperature",
+            unit_of_measurement=UnitOfTemperature.FAHRENHEIT,
+        )
+        _LOGGER.debug("Adding %s statistics for %s", len(statistics), statistic_id)
+        async_add_external_statistics(self.hass, metadata, statistics)
+        self._stats_queued = True
 
     async def _async_wait_for_recorder(self) -> None:
         """
@@ -1206,6 +1229,7 @@ class DukeEnergyCoordinator(DataUpdateCoordinator[None]):
         usage: dict[datetime, dict[str, float | int]] = {}
         reached_boundary = False
         for index in range(0, len(ranges), _MAX_CONCURRENT_REQUESTS):
+            await asyncio.sleep(_BATCH_INTERVAL_SECONDS)
             results = await asyncio.gather(
                 *(
                     self._async_get_usage_range(

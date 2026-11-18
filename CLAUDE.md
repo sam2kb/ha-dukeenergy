@@ -41,7 +41,7 @@ External PyPI dependency (import name `aiodukeenergy_co`; dev source at `../aiod
 
 - Electric meters: hourly intervals, `UnitOfEnergy.KILO_WATT_HOUR`, `StatisticMeanType.NONE`, has_sum=True.
 - Gas meters: daily intervals, `UnitOfVolume.CENTUM_CUBIC_FEET`, `StatisticMeanType.NONE`, has_sum=True.
-- Temperature: daily mean of the day's readings, registered at noon, `UnitOfTemperature.FAHRENHEIT`, `StatisticMeanType.ARITHMETIC`, has_sum=False. One temperature stat per account (not per meter), registered only for the first meter seen for each `accountNumber`.
+- Temperature: daily mean of the day's readings, registered at noon, `UnitOfTemperature.FAHRENHEIT`, `StatisticMeanType.ARITHMETIC`, has_sum=False. Only days whose stored mean differs are rewritten. One temperature stat per account (not per meter), registered only for the first meter seen for each `accountNumber`.
 - Daily consumption stats are registered at noon (start + 12h) to better represent when usage occurred.
 
 ## Development
@@ -80,6 +80,6 @@ Key mocking notes:
 ## Key constraints
 
 - All service areas are `America/New_York`. If Duke Energy ever expands, timezone detection by service address would be needed.
-- Duke Energy hourly data is available up to ~3 years back; `_async_get_energy_usage` fetches in 30-day windows walking backward, three at a time (`_MAX_CONCURRENT_REQUESTS`).
+- Duke Energy hourly data is available up to ~3 years back; `_async_get_energy_usage` fetches in 30-day windows walking backward, three at a time (`_MAX_CONCURRENT_REQUESTS`) with a `_BATCH_INTERVAL_SECONDS` pause between batches.
 - A `ClientError` from the API during pagination is treated as "no more data" (normal termination), not an error. A 401 is the exception: it raises `ConfigEntryAuthFailed` so a rejected token starts reauthentication instead of truncating the history. A 403 is retried, because Duke's edge returns it for refused requests rather than for bad tokens.
 - Config entry version is 2 (version 1 entries trigger reauth via `async_migrate_entry`).

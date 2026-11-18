@@ -411,6 +411,7 @@ class DukeEnergyOptionsFlow(OptionsFlow):
         if user_input is not None:
             backfill = user_input.get("backfill_cost", False)
             if backfill:
+                self._rebuild_requested = True
                 self._rebuild_task = self.hass.async_create_task(
                     self.config_entry.runtime_data.async_rebuild_costs(
                         self._cost_meters
@@ -456,8 +457,18 @@ class DukeEnergyOptionsFlow(OptionsFlow):
         self, _user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Save price settings without persisting a recurring rebuild request."""
+        # backfill_cost is a one-shot request that an older version may have
+        # queued and never consumed. Saving this form is no reason to drop it:
+        # it is cleared only when a rebuild started here succeeded, matching how
+        # the poll consumes it after a successful run.
+        rebuilt = getattr(self, "_rebuild_requested", False) and not getattr(
+            self, "_rebuild_error", False
+        )
+        pending_backfill = (
+            False if rebuilt else self.config_entry.options.get("backfill_cost", False)
+        )
         return self.async_create_entry(
-            data={"cost_meters": self._cost_meters, "backfill_cost": False}
+            data={"cost_meters": self._cost_meters, "backfill_cost": pending_backfill}
         )
 
     async def _entity_usable_for_price(self, entity_id: str) -> bool:
