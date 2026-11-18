@@ -160,6 +160,8 @@ async def test_daily_temperature_is_the_mean_of_the_days_readings(
     assert len(statistics) == 1
     assert statistics[0]["start"] == datetime(2026, 7, 1, 12, tzinfo=tz)
     assert statistics[0]["mean"] == pytest.approx((60 + 65 + 80) / 3)
+    # The poll schedules the next check; cancel it before teardown.
+    coordinator._on_unload()
 
 
 async def test_blocked_request_fails_poll_without_reauth(
@@ -227,6 +229,8 @@ async def test_http_auth_failure_on_meters_starts_reauth(
     with pytest.raises(ConfigEntryAuthFailed):
         await coordinator._async_update_data()
     assert coordinator.status == STATUS_FAILED
+    # The failed poll still schedules the next check; cancel it before teardown.
+    coordinator._on_unload()
 
 
 async def test_gas_meter_update(
