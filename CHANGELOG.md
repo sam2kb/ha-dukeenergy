@@ -9,6 +9,8 @@ The 2.2.0 entry credits the features inherited from that base.
 
 ## [Unreleased]
 
+- Say when a pasted address is Duke's public website rather than the callback, instead of reporting it as a malformed callback URL. The public site is where a rejected sign-in lands, so the message now points at iPhone emulation.
+
 ## [2.4.0] - 2026-11-18
 
 - Fetch usage history in batches of three concurrent 30-day requests instead of one at a time, with half a second between batches so the average request rate stays close to the old sequential walk. Keep the existing handling of history boundaries and failed requests. Adapted from [hunterjm/ha-dukeenergy#63](https://github.com/hunterjm/ha-dukeenergy/pull/63).

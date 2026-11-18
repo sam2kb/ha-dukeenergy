@@ -354,6 +354,31 @@ async def test_paste_callback_rejects_missing_code(
     assert result["errors"] == {"base": "invalid_callback_url"}
 
 
+@pytest.mark.parametrize(
+    "url",
+    ["https://www.duke-energy.com/home", "https://duke-energy.com/home"],
+)
+async def test_paste_callback_rejects_public_site_url(
+    recorder_mock: object,
+    enable_custom_integrations: object,
+    hass: HomeAssistant,
+    mock_setup_entry: AsyncMock,
+    url: str,
+) -> None:
+    """Landing on Duke's public site is reported as a bounced sign-in."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {"callback_url": url},
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "public_site_redirect"}
+
+
 # ---------------------------------------------------------------------------
 # Options flow â€” per-meter cost-entity selection.
 # ---------------------------------------------------------------------------

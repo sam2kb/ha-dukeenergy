@@ -47,7 +47,12 @@ CONF_CALLBACK_URL = "callback_url"
 # Translation keys under `config.error` in strings.json.
 ERROR_AUTHORIZE_REJECTED = "authorize_rejected"
 ERROR_INVALID_CALLBACK_URL = "invalid_callback_url"
+ERROR_PUBLIC_SITE = "public_site_redirect"
 ERROR_STATE_MISMATCH = "state_mismatch"
+
+# Duke's public website. Landing on one of these means the sign-in was bounced
+# back to the site instead of redirecting to the integration's callback.
+PUBLIC_SITE_HOSTS = frozenset({"duke-energy.com", "www.duke-energy.com"})
 
 STEP_AUTH_SCHEMA = vol.Schema(
     {
@@ -179,15 +184,22 @@ class DukeEnergyOAuth2FlowHandler(
         flow: the authorization code plus the decoded state.
 
         Raises:
-            InvalidCallbackURLError: If the URL is unusable, carries an
-                authorization error, lacks a code, or does not match the state
-                issued for this flow.
+            InvalidCallbackURLError: If the URL is unusable, is a Duke public
+                site page, carries an authorization error, lacks a code, or does
+                not match the state issued for this flow.
 
         """
         try:
-            query = URL(raw_url.strip()).query
+            url = URL(raw_url.strip())
         except ValueError as err:
             raise InvalidCallbackURLError(ERROR_INVALID_CALLBACK_URL) from err
+
+        # A public site address means Duke sent the browser back instead of to
+        # the callback, which is a sign-in rejection rather than a bad paste.
+        if url.host in PUBLIC_SITE_HOSTS:
+            raise InvalidCallbackURLError(ERROR_PUBLIC_SITE)
+
+        query = url.query
 
         if "error" in query:
             raise InvalidCallbackURLError(ERROR_AUTHORIZE_REJECTED)
