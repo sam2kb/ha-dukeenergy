@@ -9,6 +9,7 @@ The 2.2.0 entry credits the features inherited from that base.
 
 ## [Unreleased]
 
+- Fix setup being cancelled after a Home Assistant restart when cost tracking is enabled. The first poll waited for the recorder, which does not process its queue until startup finishes; cost updates now run once Home Assistant has started.
 - Say when a pasted address is Duke's public website rather than the callback, instead of reporting it as a malformed callback URL. The public site is where a rejected sign-in lands, so the message now points at iPhone emulation.
 
 ## [2.4.0] - 2026-11-18

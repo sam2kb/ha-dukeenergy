@@ -36,9 +36,10 @@ from homeassistant.const import (
     UnitOfTemperature,
     UnitOfVolume,
 )
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import CoreState, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.event import async_track_point_in_time
+from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     UpdateFailed,
@@ -337,7 +338,7 @@ class DukeEnergyCoordinator(DataUpdateCoordinator[None]):
         try:
             if self._last_successful_date == today:
                 _LOGGER.debug("Already retrieved today's data, skipping Duke requests")
-                await self._async_update_costs()
+                await self._async_update_costs_when_started()
                 return
 
             with _translate_auth_errors():
@@ -473,7 +474,7 @@ class DukeEnergyCoordinator(DataUpdateCoordinator[None]):
             if self.account_info:
                 await self._async_update_billing_payment_info()
 
-            await self._async_update_costs()
+            await self._async_update_costs_when_started()
 
             if (
                 supported_meter_count > 0
@@ -607,6 +608,23 @@ class DukeEnergyCoordinator(DataUpdateCoordinator[None]):
     async def async_rebuild_costs(self, cost_meters: dict[str, dict[str, Any]]) -> None:
         """Explicitly reprice stored consumption without a reload or Duke call."""
         await self._async_update_costs(cost_meters, rebuild=True)
+
+    async def _async_update_costs_when_started(self) -> None:
+        """
+        Update costs now, or after Home Assistant has finished starting.
+
+        The recorder does not process its queue until startup has finished.
+        Waiting for it during entry setup deadlocks until the bootstrap timeout
+        cancels the setup.
+        """
+        if self.hass.state not in (CoreState.not_running, CoreState.starting):
+            await self._async_update_costs()
+            return
+
+        async def _update(_hass: HomeAssistant) -> None:
+            await self._async_update_costs()
+
+        self.config_entry.async_on_unload(async_at_started(self.hass, _update))
 
     async def _async_update_costs(
         self,
