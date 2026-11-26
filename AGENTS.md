@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 Guidance for coding agents working in this repository. README.md covers
 installation for users, CONTRIBUTING.md covers the development setup and release
