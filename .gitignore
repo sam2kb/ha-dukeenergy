@@ -6,9 +6,6 @@ __pycache__
 */dist/*
 /dist/
 
-# dev environment
-/custom_components/duke_energy/aiodukeenergy*
-
 # misc
 .coverage
 .vscode
