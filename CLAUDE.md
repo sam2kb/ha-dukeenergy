@@ -1,85 +1,219 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for coding agents working in this repository. README.md covers
+installation for users, CONTRIBUTING.md covers the development setup and release
+rules, and CHANGELOG.md records what has shipped.
 
 ## What This Is
 
-A custom Home Assistant integration for Duke Energy. It uses the `aiodukeenergy-co` library (published to PyPI, import name `aiodukeenergy_co`) for all API communication. It is declared in `manifest.json` `requirements` (so HA installs it) and pinned in `pyproject.toml`'s dev group for tests. The library's dev source lives at `../aiodukeenergy` (sibling of this repo).
+A custom Home Assistant integration for Duke Energy, distributed through HACS.
+It is a fork of [hunterjm/ha-dukeenergy](https://github.com/hunterjm/ha-dukeenergy)
+0.3.1 by way of [crash0verride11's v2.1.4](https://github.com/crash0verride11/ha-dukeenergy);
+the changelog dates this fork's own work from 2026-10-19.
 
-The repo follows the standard GitHub/HACS layout: the integration lives under `custom_components/duke_energy/`. Filenames referenced below (`coordinator.py`, `oauth.py`, `api.py`, etc.) are all relative to `custom_components/duke_energy/`.
+Every call to Duke Energy goes through the `aiodukeenergy-co` package from PyPI
+(import name `aiodukeenergy_co`), pinned to 1.3.2. The pin appears in four
+places that have to agree: `custom_components/duke_energy/manifest.json`
+`requirements`, which is what Home Assistant installs; the `dev` group in
+`pyproject.toml`; `requirements-test-current.txt`; and `uv.lock`. There is no
+copy of the library source in this checkout. Read the installed package at
+`.venv/lib/python3.13/site-packages/aiodukeenergy_co/` when you need its
+internals.
+
+Repository layout:
+
+- `custom_components/duke_energy/`: the integration. Filenames below are
+  relative to this directory.
+- `tests/`: pytest suite built on `pytest-homeassistant-custom-component`.
+- `scripts/`: `develop` starts Home Assistant against `config/`, `lint` applies
+  Ruff fixes, `setup` installs `requirements.txt` for the dev container.
+- `.github/workflows/`: Lint, Test, Validate and Release.
 
 ## Architecture
 
 ### Two-layer auth
 
-Duke Energy requires **two token exchanges** before any API call:
+Duke Energy needs two token exchanges before any API call.
 
-1. **Auth0 → HA OAuth session** (`oauth.py` + `config_flow.py`): Uses `LocalOAuth2ImplementationWithPkce` with Duke Energy's Auth0 tenant (`login.duke-energy.com`). The `id_token` expires in 30 minutes (much sooner than the `access_token`), so `oauth.py:_adjust_token_expiry` overrides the token's `expires_at` to match the `id_token`'s `exp` claim, ensuring HA refreshes before the id_token expires.
+1. Auth0 to a Home Assistant OAuth session (`oauth.py`, `config_flow.py`).
+   `LocalOAuth2ImplementationWithPkce` runs against Duke's Auth0 tenant
+   (`login.duke-energy.com`) with the iOS app's client ID, the mobile app
+   redirect URI, the `auth0Client` blob and an iPhone Safari user agent, all in
+   `const.py`, because Duke's login rejects desktop browsers. The `id_token`
+   expires in 30 minutes while the `access_token` lasts 24 hours, so
+   `oauth.py:_adjust_token_expiry` sets `expires_at` from the `id_token`'s `exp`
+   claim and Home Assistant refreshes before the short one lapses. A missing or
+   undecodable `id_token` raises `ValueError`, which the setup path treats as an
+   auth failure.
 
-2. **Auth0 id_token → Duke Energy API token** (`aiodukeenergy_co/duke_auth.py:AbstractDukeEnergyAuth._exchange_for_duke_token`): Every API request to `api-v2.cma.duke-energy.app` requires a separate Duke Energy bearer token obtained by POSTing the Auth0 id_token to `/login/auth-token`. This token is cached in `AbstractDukeEnergyAuth`.
+2. Auth0 `id_token` to a Duke Energy API token
+   (`aiodukeenergy_co.duke_auth.AbstractDukeEnergyAuth`). Requests to
+   `api-v2.cma.duke-energy.app` carry a separate bearer token obtained by
+   posting the `id_token` to `/login/auth-token`. The library caches that token
+   and exchanges it again when it nears expiry.
 
-The HA-specific bridge is `api.py:DukeEnergyAuth`, which subclasses `AbstractDukeEnergyAuth` and implements `async_get_id_token()` by delegating to the HA `OAuth2Session`.
+`api.py:DukeEnergyAuth` bridges the two. It subclasses `AbstractDukeEnergyAuth`
+and implements `async_get_id_token()` on the HA `OAuth2Session`, turning a
+rejected refresh (4xx except 408 and 429) or an unusable `id_token` into
+`DukeEnergyAuthError` so the coordinator starts reauthentication, including when
+that happens long after setup. Network failures and Auth0 outages stay
+retryable.
+
+The sign-in step takes a pasted redirect URL, and a pasted address from Duke's
+public website is reported as a bounced sign-in rather than a malformed
+callback (`config_flow.py`).
 
 ### Data flow
 
-`coordinator.py:DukeEnergyCoordinator` is the heart of the integration. It:
-- Uses `DataUpdateCoordinator` but with `update_interval=None` — scheduling is manual.
-- Polls at 9am, 2pm, and 7pm ET (all in `America/New_York`, see `_DUKE_TZ`), with a per-user ±2-hour random offset derived from the config entry ID + date via SHA-256 to spread load.
-- Writes **external statistics** directly into the HA recorder. The statistics have no backing entities (a carrier-entity redesign was built and abandoned — branch `entities-unknown`, kept for reference only).
-- Statistic IDs follow the pattern `duke_energy:{type}_{serial}_energy_consumption` and `duke_energy:account_{srcAcctId}_temperature`.
-- Separately, `sensor.py` creates one **account device** (Last updated, bill-cycle cost, and billing/payment sensors) and one **meter device** per supported meter via_device (Last changed, bill-cycle usage sensors), fed by `get_monthly_usage()` / `get_billing_payment_info()` — these are ordinary state sensors, unrelated to the statistics.
-- Statistics persist across unload/reload/restart; they are cleared from the recorder only when the last Duke Energy config entry is removed (`__init__.py:async_remove_entry`). Removing one of several logins preserves the shared statistics because their IDs have no entry ownership marker.
+`coordinator.py:DukeEnergyCoordinator` owns polling and statistics.
+
+- It uses `DataUpdateCoordinator` with `update_interval=None` and schedules
+  itself. `_schedule_next_check` targets 9:00, 14:00 or 19:00
+  `America/New_York` (`_DUKE_TZ`, `_BASE_TIMES_ET`) plus a per-entry, per-day
+  offset of up to two hours derived from SHA-256 of the entry ID and the date
+  (`_get_or_create_daily_offset`). A failed poll moves to the next slot that
+  day; a successful one waits for tomorrow's first slot.
+- It writes external statistics straight into the recorder with no backing
+  entities. The IDs are
+  `duke_energy:{service_type_lower}_{serial}_energy_consumption`,
+  `duke_energy:{service_type_lower}_{serial}_energy_cost` and
+  `duke_energy:account_{srcAcctId}_temperature`.
+- Cost tracking is optional and configured per meter in the options flow
+  (`cost_meters`), either from a price sensor entity or a flat rate. Costs are
+  priced from stored consumption, never re-fetched from Duke. The options form
+  can rebuild the full cost history on request (`async_rebuild_costs`), and
+  `backfill_cost` is a one-shot flag that is cleared once a rebuild succeeds.
+- `sensor.py` adds ordinary state sensors. Each `srcAcctId` gets an account
+  device with status, last poll, next poll, bill-cycle cost, balance, due date
+  and bill status. Each supported meter gets a meter device linked to its
+  account with `via_device_id`, carrying last change and usage this cycle, last
+  cycle and last year. Those sensors come from `get_monthly_usage()` and
+  `get_billing_payment_info()` and are unrelated to the statistics.
+- The status sensor walks `fetching`, `recording`, `complete` and `failed`
+  (`const.py`). `recording` means rows are queued but the recorder has not
+  committed them yet, so the energy dashboard cannot read them until `complete`.
+- `diagnostics.py` dumps the entry and coordinator state with tokens and
+  `entity_id` redacted.
 
 ### aiodukeenergy-co library
 
-External PyPI dependency (import name `aiodukeenergy_co`; dev source at `../aiodukeenergy`). Key modules:
-- `dukeenergy.py` — `DukeEnergy` API client: `get_accounts()`, `get_meters()`, `get_energy_usage()`. Accounts and meters are cached in-memory; pass `fresh=True` to bypass.
-- `duke_auth.py` — Abstract/concrete auth classes. The `AbstractDukeEnergyAuth.request()` method auto-injects the DE bearer token.
-- `auth0.py` — Standalone Auth0 PKCE client (used outside Home Assistant).
+External PyPI dependency, described above. The parts that matter here:
+
+- `dukeenergy.py`: the `DukeEnergy` client with `get_accounts()`, `get_meters()`,
+  `get_energy_usage()`, `get_monthly_usage()`, `get_billing_payment_info()` and
+  `get_invoices()`. Accounts and meters are cached in memory; pass
+  `fresh=True` to bypass the cache.
+- `duke_auth.py`: `AbstractDukeEnergyAuth`, whose `request()` injects the Duke
+  bearer token and refreshes it as needed, and a standalone `DukeEnergyAuth`
+  used outside Home Assistant.
+- `exceptions.py`: `DukeEnergyError`, `DukeEnergyAuthError` (including
+  `DukeEnergyTokenExpiredError`) and `DukeEnergyBlockedError`, which the client
+  raises when a response never reached Duke's API, usually a WAF refusal with a
+  non-JSON body.
+- `auth0.py`: standalone Auth0 PKCE client for use outside Home Assistant.
 
 ### Statistic details
 
-- Electric meters: hourly intervals, `UnitOfEnergy.KILO_WATT_HOUR`, `StatisticMeanType.NONE`, has_sum=True.
-- Gas meters: daily intervals, `UnitOfVolume.CENTUM_CUBIC_FEET`, `StatisticMeanType.NONE`, has_sum=True.
-- Temperature: daily mean of the day's readings, registered at noon, `UnitOfTemperature.FAHRENHEIT`, `StatisticMeanType.ARITHMETIC`, has_sum=False. Only days whose stored mean differs are rewritten. One temperature stat per account (not per meter), registered only for the first meter seen for each `accountNumber`.
-- Daily consumption stats are registered at noon (start + 12h) to better represent when usage occurred.
+- Electric consumption: hourly intervals, `UnitOfEnergy.KILO_WATT_HOUR`,
+  `StatisticMeanType.NONE`, `has_sum=True`.
+- Gas consumption: daily intervals, `UnitOfVolume.CENTUM_CUBIC_FEET`,
+  `StatisticMeanType.NONE`, `has_sum=True`.
+- Cost: the meter's own interval (hourly for electric, daily for gas),
+  `StatisticMeanType.NONE`, `has_sum=True`, unit from `hass.config.currency`.
+- Temperature: one statistic per account rather than per meter, daily mean of
+  the day's readings stored at noon, `UnitOfTemperature.FAHRENHEIT`,
+  `StatisticMeanType.ARITHMETIC`, `has_sum=False`. A day is rewritten only when
+  its stored mean differs.
+- Daily rows are registered at noon, `start` plus 12 hours, because daily usage
+  is better placed in the middle of its day (`_stat_start`).
+- Statistics survive unload, reload and restart. They are cleared only when the
+  last Duke Energy entry is removed (`__init__.py:async_remove_entry`), because
+  the IDs carry no entry ownership and two logins can share a meter.
 
 ## Development
 
-### Running in HA
+### Environment
 
-Copy or symlink `custom_components/duke_energy/` into your HA config's `custom_components/` directory and restart.
+Python 3.13 is the floor (`requires-python`, `.ruff.toml` `target-version`).
+Home Assistant tests need Linux, so use WSL or the dev container on Windows.
 
-### Linting
+The lockfile is the minimum profile: Home Assistant 2026.2.3 with
+`pytest-homeassistant-custom-component` 0.13.316. `requirements-test-current.txt`
+is the newer profile: Home Assistant 2026.10.4 on Python 3.14. CI runs both,
+and the commands below match it.
 
-```bash
-uvx ruff check custom_components/
-uvx ruff format custom_components/
-```
-
-### Testing
-
-Tests live in `tests/` and use `pytest-homeassistant-custom-component` for HA fixtures (`hass`, `recorder_mock`, `MockConfigEntry`, etc.).
+### Commands
 
 ```bash
 uv sync --locked --all-groups
-uv run --frozen pytest tests/
+.venv/bin/python -m pytest -q
+
+uvx --from 'uv>=0.9.26' uv run --no-project --python 3.14.5 \
+  --with-requirements requirements-test-current.txt python -m pytest -q
+
+uvx ruff==0.15.16 check custom_components scripts
+uvx ruff==0.15.16 check tests --select F
+uvx ruff==0.15.16 format . --check
 ```
 
-Or without a project venv (ephemeral):
+`.ruff.toml` selects all rules with the Home Assistant core ignore list and a
+complexity ceiling of 25. `scripts/lint` formats and applies the safe fixes.
+Python 3.14.2 broke on recorder fixtures locally while 3.14.5 passed, so keep the
+current profile on 3.14.5.
 
-```bash
-PYTHONPATH=. uvx --with "pytest-homeassistant-custom-component>=0.13.0" --with "freezegun>=1.5" --with "PyJWT>=2.8" --with "aiodukeenergy-co==1.3.2" pytest tests/
-```
+To run Home Assistant by hand, use the dev container and `scripts/develop`,
+which serves `config/` on port 8123 and reads the integration through
+`PYTHONPATH`. Copying `custom_components/duke_energy/` into another development
+instance works too; use a scratch instance when working on statistics or
+removal, since those write to the recorder.
 
-Key mocking notes:
-- `aiodukeenergy_co.DukeEnergy` is instantiated in `__init__.py:async_setup_entry` — mock it at `custom_components.duke_energy.DukeEnergy`.
-- `OAuth2Session.async_ensure_token_valid` must be patched to avoid real token refresh in tests.
-- The `mock_config_entry` fixture does **not** call `add_to_hass` — tests do this themselves.
+### Testing notes
+
+`tests/conftest.py` carries most of the setup:
+
+- `mock_api` patches `custom_components.duke_energy.DukeEnergy`, the class
+  instantiated in `async_setup_entry`, plus `DukeEnergyAuth`,
+  `OAuth2Session.async_ensure_token_valid` and
+  `async_get_config_entry_implementation`. The coordinator receives the built
+  client, so that one patch site covers the API.
+- `mock_config_entry` returns a version 2 entry that has not been added to
+  `hass`; tests call `add_to_hass` themselves.
+- `mock_recorder` replaces `get_instance` and `async_add_external_statistics`,
+  so no recorder database is needed, and `stats_store` records what the
+  coordinator wrote.
+- The 0.5 second batch pause is patched out so the suite stays fast.
+
+### Translations
+
+Keep `strings.json` and `translations/en.json` in sync, including placeholder
+names. Hassfest rejects literal URLs in translation strings, so pass them
+through `description_placeholders` as `callback_prefix` in `config_flow.py`
+does.
 
 ## Key constraints
 
-- All service areas are `America/New_York`. If Duke Energy ever expands, timezone detection by service address would be needed.
-- Duke Energy hourly data is available up to ~3 years back; `_async_get_energy_usage` fetches in 30-day windows walking backward, three at a time (`_MAX_CONCURRENT_REQUESTS`) with a `_BATCH_INTERVAL_SECONDS` pause between batches.
-- A `ClientError` from the API during pagination is treated as "no more data" (normal termination), not an error. A 401 is the exception: it raises `ConfigEntryAuthFailed` so a rejected token starts reauthentication instead of truncating the history. A 403 is retried, because Duke's edge returns it for refused requests rather than for bad tokens.
-- Config entry version is 2 (version 1 entries trigger reauth via `async_migrate_entry`).
+- All service areas are `America/New_York`. Timezone detection by service
+  address would be needed if Duke ever expands.
+- First import walks back at most three years, or to the meter's agreement date
+  if later, in 30-day windows fetched newest first. Requests go three at a time
+  (`_MAX_CONCURRENT_REQUESTS`), pausing half a second before each batch
+  (`_BATCH_INTERVAL_SECONDS`) so the average rate stays near the old sequential
+  walk. Incremental polls start 30 days before the last stored row so Duke's
+  corrections are picked up.
+- History errors are classified carefully. A 4xx other than 401, 403, 408 and
+  429 means the window is outside what Duke holds, so it is treated as the end
+  of the import and later ranges are skipped (`_async_get_usage_range`). A 401
+  raises `ConfigEntryAuthFailed` so a rejected token starts reauthentication
+  instead of truncating history. A 403 is treated as Duke's edge refusing the
+  request, not a verdict on the token, so it is retried on the next schedule.
+  A 5xx, 408, 429, timeout or connection error fails the poll with
+  `UpdateFailed`; none of them are read as the end of history.
+- Never await the recorder during setup. It does not process its queue until
+  Home Assistant finishes starting, so a cost update during entry setup can
+  deadlock until the bootstrap timeout cancels setup. Cost work is deferred with
+  `async_at_started` (`_async_update_costs_when_started`).
+- Config entry version is 2, minor version 1. A version 1 entry is migrated to
+  an empty-data version 2 entry, which then asks for reauthentication.
+- Version bumps: the git tag, `manifest.json`, `pyproject.toml` and the
+  `ha-dukeenergy` entry in `uv.lock` must agree. Keep an empty `Unreleased`
+  section at the top of the changelog.
